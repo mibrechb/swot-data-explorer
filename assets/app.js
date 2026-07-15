@@ -255,7 +255,6 @@ function makeGeoJson(data, selected = false) {
           bubblingMouseEvents: !selected,
           keyboard: false,
           riseOnHover: !selected,
-          zIndexOffset: selected ? 2000 : 1000,
         });
       }
 

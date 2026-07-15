@@ -336,3 +336,14 @@ input[type=range] { width:100%; }
     height: 16px;
   }
 }
+
+/* Keep DOM-based node markers above Leaflet's canvas renderer.
+   Leaflet assigns marker z-index from screen latitude; forcing a fixed value
+   prevents southern nodes from falling behind the interactive canvas. */
+.leaflet-marker-icon.node-feature-marker {
+  z-index: 1000 !important;
+}
+
+.leaflet-marker-icon.node-feature-marker.selected {
+  z-index: 1100 !important;
+}
