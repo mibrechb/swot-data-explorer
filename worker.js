@@ -12,7 +12,7 @@ const HYDROCRON_URL =
 // Replace the example GitHub Pages origin before deployment. Localhost entries
 // allow testing the deployed Worker from the local FastAPI site.
 const ALLOWED_ORIGINS = new Set([
-  'https://YOUR_USERNAME.github.io',
+  'https://mibrechb.github.io',
   'http://127.0.0.1:8000',
   'http://localhost:8000',
 ]);
