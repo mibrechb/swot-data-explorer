@@ -25,7 +25,7 @@ export const FEATURE_CONFIG = {
     idCandidates: ['reach_id', 'fid'],
     feature: 'Reach',
     collection: 'SWOT_L2_HR_RiverSP_D',
-    variables: ['wse', 'width', 'slope', 'd_x_area'],
+    variables: ['wse', 'width', 'slope'],
     defaultVariable: 'wse',
     smoothDefaults: ['wse', 'width'],
     metadata: ['reach_id', 'river_name', 'p_length', 'p_wse', 'p_width'],
@@ -50,10 +50,10 @@ export const VARIABLE_META = {
   slope: ['Water Surface Slope', 'm/km'],
   d_x_area: ['Area Change', 'm²'],
   area_total: ['Total Water Area', 'km²'],
-  ds1_l: ['Direct storage change, linear bathymetry model', 'km³'],
-  ds1_q: ['Direct storage change, quadratic bathymetry model', 'km³'],
-  ds2_l: ['Incremental storage change, linear bathymetry model', 'km³'],
-  ds2_q: ['Incremental storage change, quadratic bathymetry model', 'km³'],
+  ds1_l: ['Direct storage change, lin. model', 'km³'],
+  ds1_q: ['Direct storage change, quad. model', 'km³'],
+  ds2_l: ['Incr. storage change, lin. model', 'km³'],
+  ds2_q: ['Incr. storage change, quad. model', 'km³'],
 };
 
 export const META_LABELS = {
@@ -62,12 +62,12 @@ export const META_LABELS = {
   reach_id: ['Reach ID', ''],
   node_id: ['Node ID', ''],
   river_name: ['River name', ''],
-  p_ref_wse: ['Prior Water Surface Elevation', 'm'],
+  p_ref_wse: ['Prior water surface elevation', 'm'],
   p_ref_area: ['Prior area', 'km²'],
   p_date_t0: ['Storage-change reference date', ''],
   p_storage: ['Prior storage', 'km³'],
-  p_length: ['Prior length', 'km'],
-  p_wse: ['Prior Water Surface Elevation', 'm'],
+  p_length: ['Prior length', 'm'],
+  p_wse: ['Prior water surface elevation', 'm'],
   p_width: ['Prior width', 'm'],
 };
 
