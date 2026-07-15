@@ -159,6 +159,28 @@ const els = {
 
 els.panelDownload.disabled = true;
 
+function nextAnimationFrame() {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+function resizePlot() {
+  if (
+    !els.plot ||
+    !els.plot.data?.length ||
+    els.plot.offsetParent === null
+  ) {
+    return;
+  }
+
+  Plotly.Plots.resize(els.plot);
+}
+
+function schedulePlotResize() {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(resizePlot);
+  });
+}
+
 function apiUrl(path, params) {
   const base = CONFIG.apiBaseUrl.replace(/\/$/, '');
   return `${base}${path}?${params.toString()}`;
@@ -623,6 +645,9 @@ function scheduleGeometryLoad() {
 function openPanel() {
   els.panel.classList.add('open');
   els.panel.setAttribute('aria-hidden', 'false');
+
+  schedulePlotResize();
+  els.panel.addEventListener('transitionend', resizePlot, {once: true});
 }
 
 function clearSelection() {
@@ -907,7 +932,10 @@ function traceHover(row, config) {
   return [uncertainty ?? 'N/A', quality ?? 'N/A'];
 }
 
-function renderPlot(preserveViewport = true, selectedVariable = null) {
+async function renderPlot(
+  preserveViewport = true,
+  selectedVariable = null,
+) {
   const variable = selectedVariable || els.variable.value;
   if (!variable || !state.dataframe.length) {
     els.spinner.hidden = true;
@@ -1058,6 +1086,7 @@ function renderPlot(preserveViewport = true, selectedVariable = null) {
   const initialYRange = paddedNumericRange(initialYValues);
 
   const layout = {
+    autosize: true,
     margin: {l: 72, r: 20, t: 18, b: 50},
     height: 430,
     showlegend: true,
@@ -1095,7 +1124,15 @@ function renderPlot(preserveViewport = true, selectedVariable = null) {
     layout.yaxis.autorange = false;
   }
 
-  Plotly.react(els.plot, traces, layout, {
+  // Plotly must measure a visible container. Show the plot first, wait for
+  // layout, and only then render it at the panel's actual width.
+  els.spinner.hidden = true;
+  els.loading.style.display = 'none';
+  els.plot.style.display = 'block';
+
+  await nextAnimationFrame();
+
+  await Plotly.react(els.plot, traces, layout, {
     responsive: true,
     displaylogo: false,
     scrollZoom: true,
@@ -1106,9 +1143,8 @@ function renderPlot(preserveViewport = true, selectedVariable = null) {
       scale: 3,
     },
   });
-  els.spinner.hidden = true;
-  els.loading.style.display = 'none';
-  els.plot.style.display = 'block';
+
+  schedulePlotResize();
 }
 
 document.querySelectorAll('[data-feature]').forEach((button) => {
