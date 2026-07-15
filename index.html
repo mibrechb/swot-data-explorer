@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>SWOT Lake and River Explorer</title>
+  <link rel="preconnect" href="https://unpkg.com">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css">
+  <link rel="stylesheet" href="./assets/styles.css?v=29">
+</head>
+<body>
+  <main id="app">
+    <div id="map" aria-label="SWOT water feature map"></div>
+
+    <header class="map-header">
+      <div class="brand">
+        <a class="brand-logo-link" href="https://www.sos-water.eu" target="_blank" rel="noopener noreferrer" aria-label="Visit SOS-WATER">
+          <img class="brand-logo" src="https://cdn.prod.website-files.com/687a34fc85e29265739cc149/687a35e704a2a529766fb9d6_Webclip-soswater.jpg" alt="SOS-WATER project logo">
+        </a>
+        <div class="brand-copy">
+          <strong>SWOT Lake and River Explorer</strong>
+          <small>
+            Explore global data on lakes and rivers from the Surface Water and Ocean Topography (SWOT) mission
+          </small>
+        </div>
+      </div>
+      <div class="map-controls">
+        <nav class="feature-switcher" aria-label="Feature type">
+          <button data-feature="lake" class="active"><img src="./assets/icon_lake.svg" alt="">Lakes</button>
+          <button data-feature="reach"><img src="./assets/icon_reach.svg" alt="">Rivers</button>
+          <button data-feature="node"><img src="./assets/icon_node.svg" alt="">Nodes</button>
+        </nav>
+        <label class="frequency-toggle">
+          <input id="frequency-toggle" type="checkbox">
+          <span>Show observation frequency</span>
+        </label>
+      </div>
+    </header>
+
+    <div id="map-status" class="map-status">Move or zoom the map to load features.</div>
+    <div id="frequency-legend" class="frequency-legend" hidden></div>
+
+    <section id="overview-control" class="overview-control" aria-label="World overview map">
+      <div class="overview-label">World overview</div>
+      <div id="overview-map" class="overview-map"></div>
+    </section>
+
+    <footer class="map-attribution-note">
+      Uses
+      <a href="https://swot.jpl.nasa.gov/" target="_blank" rel="noopener noreferrer">SWOT mission data</a>
+      served through the
+      <a href="https://podaac.github.io/hydrocron/" target="_blank" rel="noopener noreferrer">PO.DAAC Hydrocron API</a>.
+    </footer>
+
+    <aside id="details-panel" class="details-panel" aria-hidden="true">
+      <div class="panel-shell">
+        <div class="panel-topbar">
+          <div class="panel-heading">
+            <img id="panel-feature-icon" class="feature-title-icon" src="./assets/icon_lake.svg" alt="">
+            <div class="panel-heading-copy">
+              <strong id="panel-kicker">Selected feature</strong>
+              <small id="panel-subtitle"></small>
+            </div>
+          </div>
+          <div class="panel-actions">
+            <button id="panel-download" class="icon-button" aria-label="Download Hydrocron CSV" title="Download Hydrocron CSV"><img src="./assets/icon_download.svg" alt=""></button>
+            <button id="panel-back" class="icon-button" aria-label="Back to map" title="Back to map"><img src="./assets/icon_back.svg" alt=""></button>
+            <button id="panel-close" class="icon-button" aria-label="Close details" title="Close details"><img src="./assets/icon_close.svg" alt=""></button>
+          </div>
+        </div>
+
+        <div class="panel-content">
+          <section id="metadata" class="metadata"></section>
+
+          <section class="plot-card">
+            <div class="plot-toolbar">
+              <div class="settings-heading">Variable selection</div>
+              <label>
+                <select id="variable-select" aria-label="Variable selection"></select>
+              </label>
+            </div>
+            <div id="plot-loading" class="plot-loading"><span id="plot-spinner" class="loading-spinner" hidden aria-hidden="true"></span><span id="plot-loading-text">Select a feature to load observations.</span></div>
+            <div id="plot"></div>
+            <div class="smoothing-controls">
+              <div class="settings-heading">Smoothing settings</div>
+              <label class="check-row"><input id="smoothing-enabled" type="checkbox"> Enable smoothing (LOWESS)</label>
+              <label id="include-suspect-row" class="check-row"><input id="include-suspect" type="checkbox" checked> Include suspect observations</label>
+              <label>Smoothness (f) <input id="smoothness" type="range" min="0.01" max="0.80" step="0.01" value="0.05"><output id="smoothness-value">0.05</output></label>
+              <label>Outlier threshold (τ) <input id="outlier-threshold" type="range" min="2" max="8" step="0.5" value="4"><output id="outlier-value">4.0</output></label>
+            </div>
+            <section class="data-description" aria-labelledby="data-description-heading">
+              <div id="data-description-heading" class="settings-heading">Data description</div>
+              <div id="data-description-content"></div>
+            </section>
+          </section>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://unpkg.com/flatgeobuf@4.4.0/dist/flatgeobuf-geojson.min.js"></script>
+  <script type="module" src="./assets/app.js?v=29"></script>
+</body>
+</html>

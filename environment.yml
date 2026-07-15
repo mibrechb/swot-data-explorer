@@ -1,0 +1,14 @@
+name: swot-explorer
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - fastapi>=0.115
+  - httpx>=0.27
+  - uvicorn>=0.30
+  - watchfiles
+  - certifi
+  - geopandas>=1.0
+  - shapely>=2.0
+  - pyogrio
+  - pyarrow

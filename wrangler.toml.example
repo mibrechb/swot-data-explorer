@@ -1,0 +1,7 @@
+name = 'swot-explorer-api'
+main = 'worker.js'
+compatibility_date = '2026-07-15'
+workers_dev = true
+
+# Copy this file to wrangler.toml before deployment.
+# Then edit ALLOWED_ORIGINS in worker.js for your GitHub Pages origin.
