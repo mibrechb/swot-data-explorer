@@ -202,50 +202,68 @@ function selectedStyle() {
   return {radius: 8, color: '#fff', weight: 2, fillColor: '#ef5a34', fillOpacity: 1};
 }
 
+function nodeIcon(selected = false) {
+  const size = selected ? 16 : 14;
+
+  return L.divIcon({
+    className: selected
+      ? 'node-feature-marker selected'
+      : 'node-feature-marker',
+    html: '<span></span>',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
 function makeGeoJson(data, selected = false) {
   const style = selected ? selectedStyle() : geometryStyle();
+
   return L.geoJSON(data, {
     pane: selected ? 'selected-feature' : 'water-features',
     interactive: !selected,
     bubblingMouseEvents: !selected,
     style: () => style,
+
     pointToLayer: (_, latlng) => {
-      if (state.featureType === 'node' && !selected) {
+      if (state.featureType === 'node') {
         return L.marker(latlng, {
-          pane: 'water-features',
-          interactive: true,
-          bubblingMouseEvents: true,
-          keyboard: true,
-          icon: L.divIcon({
-            className: 'node-feature-marker',
-            html: '<span aria-hidden="true"></span>',
-            iconSize: [22, 22],
-            iconAnchor: [11, 11],
-          }),
+          pane: selected ? 'selected-feature' : 'water-features',
+          icon: nodeIcon(selected),
+          interactive: !selected,
+          bubblingMouseEvents: !selected,
+          keyboard: false,
+          riseOnHover: !selected,
         });
       }
+
       return L.circleMarker(latlng, {
         ...style,
+        pane: selected ? 'selected-feature' : 'water-features',
         interactive: !selected,
         bubblingMouseEvents: !selected,
       });
     },
+
     onEachFeature: selected ? undefined : (feature, layer) => {
-      layer.on({
-        click: () => selectFeature(feature),
-        mouseover: () => {
-          map.getContainer().style.cursor = 'pointer';
-          if (state.featureType !== 'node') {
-            layer.setStyle({weight: (style.weight || 1) + 2});
-          }
-        },
-        mouseout: () => {
-          map.getContainer().style.cursor = '';
-          if (state.featureType !== 'node' && state.featureLayer) {
-            state.featureLayer.resetStyle(layer);
-          }
-        },
+      layer.on('click', (event) => {
+        L.DomEvent.stopPropagation(event);
+        selectFeature(feature);
       });
+
+      if (state.featureType !== 'node') {
+        layer.on({
+          mouseover: () => {
+            layer.setStyle({
+              weight: (style.weight || 1) + 2,
+            });
+          },
+          mouseout: () => {
+            if (state.featureLayer) {
+              state.featureLayer.resetStyle(layer);
+            }
+          },
+        });
+      }
     },
   });
 }

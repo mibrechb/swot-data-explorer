@@ -293,23 +293,38 @@ input[type=range] { width:100%; }
   border: 0;
   background: transparent;
   cursor: pointer;
+  pointer-events: auto;
 }
+
 .node-feature-marker span {
   position: absolute;
   left: 50%;
   top: 50%;
   width: 11px;
   height: 11px;
-  transform: translate(-50%,-50%);
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
   border: 2px solid #fff;
   border-radius: 50%;
   background: #176b87;
-  box-shadow: 0 0 0 1px rgba(16,32,47,.18);
+  box-shadow: 0 0 0 1px rgba(16, 32, 47, .18);
 }
+
 .node-feature-marker:hover span,
 .node-feature-marker:focus span {
   width: 14px;
   height: 14px;
+  background: #ef5a34;
+}
+
+.node-feature-marker.selected {
+  cursor: default;
+  pointer-events: none;
+}
+
+.node-feature-marker.selected span {
+  width: 16px;
+  height: 16px;
   background: #ef5a34;
 }
 @media (max-width: 760px) {
