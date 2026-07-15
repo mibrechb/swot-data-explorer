@@ -11,9 +11,9 @@ export const CONFIG = {
     nadir: './data/orbit/processed/swot_nadir.fgb',
   },
 
-  initialCenter: [52.13, 5.29],
+  initialCenter: [47.05190700320289, 8.309239494839204],
   initialZoom: 10,
-  minZoom: {lake: 8, reach: 8, node: 10},
+  minZoom: {lake: 10, reach: 10, node: 13},
   maxFeatures: 5000,
   debounceMs: 350,
   startTime: '2022-02-01T00:00:00Z',
