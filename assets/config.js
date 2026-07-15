@@ -1,10 +1,10 @@
 export const CONFIG = {
-  // Keep this empty for the local FastAPI server. For GitHub Pages, set it to
-  // the deployed Cloudflare Worker origin, without a trailing slash.
+  // Keep empty for the local FastAPI server. For GitHub Pages, set to
+  // deployed Cloudflare Worker origin-
   // Example: 'https://swot-explorer-api.example.workers.dev'
-  apiBaseUrl: '',
+  apiBaseUrl: 'https://swot-explorer-api.michael-brechbuehler.workers.dev',
 
-  // Same-origin, spatially indexed FlatGeobuf assets. The browser reads only
+  // Spatially indexed FlatGeobuf assets, browser reads only
   // features intersecting the current viewport by using HTTP Range requests.
   orbitFiles: {
     overlaps: './data/orbit/processed/swot_overlaps.fgb',
