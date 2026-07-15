@@ -12,11 +12,11 @@ export const CONFIG = {
   },
 
   initialCenter: [47.05190700320289, 8.309239494839204],
-  initialZoom: 10,
-  minZoom: {lake: 10, reach: 10, node: 13},
+  initialZoom: 11,
+  minZoom: {lake: 11, reach: 11, node: 13},
   maxFeatures: 5000,
   debounceMs: 350,
   startTime: '2022-02-01T00:00:00Z',
-  observationFrequencyOpacity: 0.52,
-  orbitMinZoom: 4,
+  observationFrequencyOpacity: 0.4,
+  orbitMinZoom: 7,
 };
