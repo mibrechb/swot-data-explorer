@@ -128,8 +128,6 @@ map.createPane('water-features');
 map.getPane('water-features').style.zIndex = 430;
 map.createPane('selected-feature');
 map.getPane('selected-feature').style.zIndex = 450;
-// The selection renderer spans the full map. Disable pointer events on the
-// complete pane so its SVG canvas can never block clicks on water features.
 map.getPane('selected-feature').style.pointerEvents = 'none';
 
 const els = {
@@ -790,14 +788,14 @@ function renderDataDescription() {
   const isLake = state.featureType === 'lake';
   if (isLake) {
     els.dataDescription.innerHTML = `
-      <p>Lake observations are from <strong>SWOT_L2_HR_LakeSP_D</strong>.</p>
+      <p>Lake observations shown are from <strong>SWOT_L2_HR_LakeSP_D</strong>. This dataset provides geolocated surface water measurements for lakes, derived from high-resolution radar observations collected by the Ka-band Radar Interferometer (KaRIn) on the SWOT satellite. The variables contained include water surface elevation, surface area, and quality indicators.</p>
       <div class="dataset-citation">
         <p>SWOT. (2025). <em>SWOT Level 2 Lake Single-Pass Vector Data Product</em> [Dataset]. NASA Physical Oceanography Distributed Active Archive Center. <a href="https://doi.org/10.5067/SWOT-LAKESP-D" target="_blank" rel="noopener noreferrer">https://doi.org/10.5067/SWOT-LAKESP-D</a></p>
       </div>`;
     return;
   }
   els.dataDescription.innerHTML = `
-    <p>River reach and node observations are from <strong>SWOT_L2_HR_RiverSP_D</strong>. Discharge is not included in Version D and is currently disseminated separately in <strong>SWOT_L4_HR_DAWG_SOS_DISCHARGE_V3</strong>. Hydrocron integration is being tracked in <a href="https://github.com/podaac/hydrocron/issues/308" target="_blank" rel="noopener noreferrer">podaac/hydrocron issue 308</a>.</p>
+    <p>River reach and node observations are from <strong>SWOT_L2_HR_RiverSP_D</strong>. This dataset provides hydrologic measurements for predefined river reaches and nodes, derived from high-resolution radar observations collected by the Ka-band Radar Interferometer (KaRIn) aboard the SWOT satellite. The variables contained include water surface elevation, slope, width, area, and discharge estimates for each reach, along with corresponding node-level details. Discharge is currently not yet included in Version D and is being disseminated separately in <strong>SWOT_L4_HR_DAWG_SOS_DISCHARGE_V3</strong>. However, Hydrocron integration is underway and being tracked in <a href="https://github.com/podaac/hydrocron/issues/308" target="_blank" rel="noopener noreferrer">podaac/hydrocron issue 308</a>.</p>
     <div class="dataset-citation">
       <p>SWOT. (2025). <em>SWOT Level 2 River Single-Pass Vector Data Product</em> [Dataset]. NASA Physical Oceanography Distributed Active Archive Center. <a href="https://doi.org/10.5067/SWOT-RIVERSP-D" target="_blank" rel="noopener noreferrer">https://doi.org/10.5067/SWOT-RIVERSP-D</a></p>
     </div>`;
@@ -835,9 +833,7 @@ function paddedNumericRange(values, paddingFraction = 0.07) {
   const maximum = Math.max(...finiteValues);
   const span = maximum - minimum;
 
-  // Use the observed spread for padding. The previous fallback used a
-  // fraction of the absolute data magnitude, which produced very large
-  // ranges for variables such as WSE around 500 m.
+  // Use the observed spread for padding
   const padding = span > 0
     ? span * paddingFraction
     : Math.max(Math.abs(minimum) * 0.001, 0.01);
