@@ -187,3 +187,6 @@ data/orbit/tmp/
 
 # Local logs
 *.log
+
+# Cloudflare/Wrangler configuration
+wrangler.toml
