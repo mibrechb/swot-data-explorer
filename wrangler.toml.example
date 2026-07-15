@@ -1,7 +1,29 @@
+# Copy this file to wrangler.toml before deployment.
+# Edit ALLOWED_ORIGINS in worker.js if the GitHub Pages origin changes.
+
 name = 'swot-explorer-api'
 main = 'worker.js'
 compatibility_date = '2026-07-15'
 workers_dev = true
 
-# Copy this file to wrangler.toml before deployment.
-# Then edit ALLOWED_ORIGINS in worker.js for your GitHub Pages origin.
+# Per-Cloudflare-location rate limits. The Worker combines the visitor IP and
+# route name as the key, so WFS and Hydrocron have independent per-IP limits.
+[[ratelimits]]
+name = 'WFS_RATE_LIMITER'
+namespace_id = '1001'
+
+  [ratelimits.simple]
+  limit = 120
+  period = 60
+
+[[ratelimits]]
+name = 'HYDROCRON_RATE_LIMITER'
+namespace_id = '1002'
+
+  [ratelimits.simple]
+  limit = 30
+  period = 60
+
+[observability]
+enabled = true
+head_sampling_rate = 1
