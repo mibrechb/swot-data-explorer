@@ -1,21 +1,23 @@
-"""Serve the SWOT web explorer and proxy approved upstream requests."""
+"""Serve the SWOT web explorer locally and proxy approved API requests."""
+
 from __future__ import annotations
 
 import logging
 import os
+import re
 import ssl
+import time
 from pathlib import Path
 from typing import Any
 
 import certifi
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
-from orbit_vectors import orbit_readers
-
 PROJECT_DIR = Path(__file__).resolve().parent
+
 HYDROWEB_WFS_URL = (
     'https://hydroweb.next.theia-land.fr/geoserver/REF_DATA/ows'
 )
@@ -31,27 +33,40 @@ ALLOWED_WFS_LAYERS = {
 }
 ALLOWED_HYDROCRON_FEATURES = {'PriorLake', 'Reach', 'Node'}
 
-LOGGER = logging.getLogger('swot.proxy')
-app = FastAPI(title='SWOT Water Explorer')
+MAX_WFS_FEATURES = 5000
+MAX_FIELDS_LENGTH = 4000
+UPSTREAM_TIMEOUT_SECONDS = 30.0
+FEATURE_ID_PATTERN = re.compile(r'^[A-Za-z0-9_.:-]{1,80}$')
+
+LOGGER = logging.getLogger('swot.local')
+app = FastAPI(title='SWOT Lake and River Explorer')
+
 
 @app.middleware('http')
-async def disable_frontend_cache(request: Request, call_next):
-    """Prevent stale JavaScript and CSS during local development."""
+async def local_development_headers(request: Request, call_next):
+    """Disable frontend caching and add basic response hardening."""
+    started_at = time.perf_counter()
     response = await call_next(request)
+
     if request.url.path == '/' or request.url.path.startswith('/assets/'):
         response.headers['Cache-Control'] = 'no-store, max-age=0'
         response.headers['Pragma'] = 'no-cache'
+
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+
+    if request.url.path.startswith('/api/'):
+        LOGGER.info(
+            'route=%s status=%s duration_ms=%d',
+            request.url.path,
+            response.status_code,
+            round((time.perf_counter() - started_at) * 1000),
+        )
+
     return response
 
 
-
 def _ssl_context() -> ssl.SSLContext | bool:
-    """Return an SSL verifier using certifi or a configured CA bundle.
-
-    Set ``SWOT_CA_BUNDLE`` to a corporate CA bundle when required.
-    ``SWOT_DISABLE_SSL_VERIFY=1`` is available only as a temporary local
-    diagnostic and should never be used for a public deployment.
-    """
+    """Return an SSL verifier using certifi or a configured CA bundle."""
     if os.getenv('SWOT_DISABLE_SSL_VERIFY') == '1':
         LOGGER.warning('TLS certificate verification is disabled.')
         return False
@@ -60,25 +75,34 @@ def _ssl_context() -> ssl.SSLContext | bool:
     return ssl.create_default_context(cafile=ca_bundle)
 
 
-def _forward_headers(upstream: httpx.Response) -> dict[str, str]:
+def _forward_headers(
+    upstream: httpx.Response,
+    cache_seconds: int,
+) -> dict[str, str]:
     """Return only response headers useful to the browser."""
     headers = {
-        'Cache-Control': upstream.headers.get(
-            'cache-control',
-            'public, max-age=300',
-        ),
+        'Cache-Control': f'public, max-age={cache_seconds}',
     }
+
     content_disposition = upstream.headers.get('content-disposition')
     if content_disposition:
         headers['Content-Disposition'] = content_disposition
+
     return headers
 
 
-async def _proxy_get(url: str, params: dict[str, Any]) -> Response:
+async def _proxy_get(
+    url: str,
+    params: dict[str, Any],
+    cache_seconds: int,
+) -> Response:
     """Perform one guarded server-to-server GET request."""
     try:
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(90.0, connect=30.0),
+            timeout=httpx.Timeout(
+                UPSTREAM_TIMEOUT_SECONDS,
+                connect=UPSTREAM_TIMEOUT_SECONDS,
+            ),
             follow_redirects=True,
             verify=_ssl_context(),
             trust_env=True,
@@ -90,24 +114,20 @@ async def _proxy_get(url: str, params: dict[str, Any]) -> Response:
             upstream = await client.get(url, params=params)
     except httpx.HTTPError as error:
         LOGGER.exception(
-            'Upstream request failed: %s %s',
+            'Upstream request failed: url=%s error=%s',
             url,
             type(error).__name__,
         )
         raise HTTPException(
             status_code=502,
-            detail=(
-                f'Upstream request failed ({type(error).__name__}): '
-                f'{error}'
-            ),
+            detail='Upstream service is unavailable.',
         ) from error
 
     if upstream.status_code >= 400:
-        LOGGER.error(
-            'Upstream returned HTTP %s for %s: %s',
+        LOGGER.warning(
+            'Upstream returned status=%s url=%s',
             upstream.status_code,
             upstream.url,
-            upstream.text[:500],
         )
 
     return Response(
@@ -117,8 +137,70 @@ async def _proxy_get(url: str, params: dict[str, Any]) -> Response:
             'content-type',
             'application/octet-stream',
         ),
-        headers=_forward_headers(upstream),
+        headers=_forward_headers(upstream, cache_seconds),
     )
+
+
+def _validate_bbox(raw_bbox: str | None) -> None:
+    """Validate a WGS84 bbox with an optional fifth CRS component."""
+    if not raw_bbox:
+        raise HTTPException(
+            status_code=400,
+            detail='A valid EPSG:4326 bounding box is required.',
+        )
+
+    parts = raw_bbox.split(',')
+    if len(parts) not in {4, 5}:
+        raise HTTPException(
+            status_code=400,
+            detail='bbox must contain west,south,east,north.',
+        )
+
+    try:
+        west, south, east, north = map(float, parts[:4])
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail='bbox coordinates must be numeric.',
+        ) from error
+
+    valid = (
+        -180 <= west < east <= 180
+        and -90 <= south < north <= 90
+    )
+    if not valid:
+        raise HTTPException(
+            status_code=400,
+            detail='bbox is outside valid WGS84 bounds.',
+        )
+
+
+def _parse_wfs_count(params: dict[str, str]) -> int:
+    """Return a validated WFS feature-count limit."""
+    raw_count = (
+        params.get('count')
+        or params.get('maxFeatures')
+        or str(MAX_WFS_FEATURES)
+    )
+
+    if not raw_count.isdigit():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f'WFS count must be between 1 and {MAX_WFS_FEATURES}.'
+            ),
+        )
+
+    count = int(raw_count)
+    if not 1 <= count <= MAX_WFS_FEATURES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f'WFS count must be between 1 and {MAX_WFS_FEATURES}.'
+            ),
+        )
+
+    return count
 
 
 @app.get('/api/health')
@@ -129,22 +211,27 @@ async def health() -> dict[str, str]:
 
 @app.get('/api/wfs')
 async def proxy_wfs(request: Request) -> Response:
-    """Proxy an approved Hydroweb WFS GetFeature request."""
+    """Proxy one approved Hydroweb WFS GetFeature request."""
     params = dict(request.query_params)
     layer = params.get('typeNames') or params.get('typeName')
 
     if params.get('service', 'WFS') != 'WFS':
         raise HTTPException(status_code=400, detail='Only WFS is allowed.')
+
     if params.get('request', 'GetFeature') != 'GetFeature':
         raise HTTPException(
             status_code=400,
             detail='Only GetFeature is allowed.',
         )
+
     if layer not in ALLOWED_WFS_LAYERS:
         raise HTTPException(
             status_code=400,
             detail=f'Unsupported WFS layer: {layer!r}',
         )
+
+    _validate_bbox(params.get('bbox'))
+    count = _parse_wfs_count(params)
 
     allowed_keys = {
         'service',
@@ -155,34 +242,48 @@ async def proxy_wfs(request: Request) -> Response:
         'typeName',
         'typeNames',
         'srsName',
-        'count',
-        'maxFeatures',
     }
     safe_params = {
         key: value
         for key, value in params.items()
         if key in allowed_keys
     }
-    return await _proxy_get(HYDROWEB_WFS_URL, safe_params)
+    safe_params['count'] = str(count)
+
+    return await _proxy_get(
+        HYDROWEB_WFS_URL,
+        safe_params,
+        cache_seconds=300,
+    )
 
 
 @app.get('/api/hydrocron')
 async def proxy_hydrocron(request: Request) -> Response:
-    """Proxy an approved Hydrocron time-series request."""
+    """Proxy one approved Hydrocron time-series request."""
     params = dict(request.query_params)
     feature = params.get('feature')
+    feature_id = params.get('feature_id', '')
+    fields = params.get('fields', '')
 
     if feature not in ALLOWED_HYDROCRON_FEATURES:
         raise HTTPException(
             status_code=400,
             detail=f'Unsupported Hydrocron feature: {feature!r}',
         )
-    if not params.get('feature_id'):
-        raise HTTPException(status_code=400, detail='feature_id is required.')
+
+    if not FEATURE_ID_PATTERN.fullmatch(feature_id):
+        raise HTTPException(status_code=400, detail='Invalid feature_id.')
+
     if not params.get('collection_name'):
         raise HTTPException(
             status_code=400,
             detail='collection_name is required.',
+        )
+
+    if not fields or len(fields) > MAX_FIELDS_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail='Invalid fields parameter.',
         )
 
     allowed_keys = {
@@ -199,44 +300,12 @@ async def proxy_hydrocron(request: Request) -> Response:
         for key, value in params.items()
         if key in allowed_keys
     }
-    return await _proxy_get(HYDROCRON_URL, safe_params)
 
-
-def _parse_bbox(bbox: str) -> tuple[float, float, float, float]:
-    try:
-        west, south, east, north = [float(value) for value in bbox.split(',')]
-    except (TypeError, ValueError) as error:
-        raise HTTPException(
-            status_code=400,
-            detail='bbox must be west,south,east,north.',
-        ) from error
-    if not (-180 <= west < east <= 180 and -90 <= south < north <= 90):
-        raise HTTPException(status_code=400, detail='bbox is outside WGS84 bounds.')
-    return west, south, east, north
-
-
-@app.get('/api/orbit-overlaps')
-async def orbit_overlaps(bbox: str) -> JSONResponse:
-    """Return precomputed overlap polygons intersecting the viewport."""
-    bounds = _parse_bbox(bbox)
-    overlaps, _ = orbit_readers(PROJECT_DIR)
-    try:
-        payload = overlaps.query(*bounds)
-    except (FileNotFoundError, OSError, ValueError) as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
-    return JSONResponse(payload, headers={'Cache-Control': 'public, max-age=86400'})
-
-
-@app.get('/api/orbit-nadir')
-async def orbit_nadir(bbox: str) -> JSONResponse:
-    """Return precomputed nadir tracks intersecting the viewport."""
-    bounds = _parse_bbox(bbox)
-    _, nadir = orbit_readers(PROJECT_DIR)
-    try:
-        payload = nadir.query(*bounds)
-    except (FileNotFoundError, OSError, ValueError) as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
-    return JSONResponse(payload, headers={'Cache-Control': 'public, max-age=86400'})
+    return await _proxy_get(
+        HYDROCRON_URL,
+        safe_params,
+        cache_seconds=600,
+    )
 
 
 app.mount(
