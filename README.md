@@ -1,6 +1,10 @@
 # SWOT Water Explorer
 
-Responsive Leaflet + Plotly explorer for SWOT lakes, river reaches, and nodes.
+This repository contains a responsive data explorer based on Leaflet and Plotly for data from the Surface Water and Ocean Topography (SWOT) mission. 
+
+A mapview allows to display lake, river reach and river node geometries from the SWOT Prior Lake and SWOT SWORD River Dataset served by THEIA Hydroweb GeoServer. Selecting features allows to load and plot corresponding SWOT Level 2 River and Lake Single-Pass data server over the Hydrocron API.
+
+Additional features include an observation frequency layer, a geosearch integration, line fitting based on LOWESS as well as download capabilities for raw data and figures.
 
 ## Web-hosting architecture
 
@@ -91,116 +95,3 @@ npx wrangler deploy
 
 The Worker accepts only the known Hydroweb layers and Hydrocron feature types;
 it is not a general-purpose open proxy.
-
-## Configuration
-
-- `assets/config.js`: Worker origin, orbit file paths, initial map and zooms.
-- `assets/fields.js`: feature types, variables, labels, units, and metadata.
-- `assets/styles.css`: layout and visual design.
-- `worker.js`: production WFS/Hydrocron CORS proxy.
-- `server.py`: local development server and proxy.
-
-## Responsive interface
-
-- Desktop and landscape: the details panel slides in from the right.
-- Mobile and portrait: the details view covers the page and provides a back button.
-- The selected geometry remains highlighted until another feature is selected or the feature type changes.
-
-## Configuration
-
-- `assets/config.js`: API base, initial map location, zoom thresholds, dates.
-- `assets/fields.js`: feature types, variables, labels, units, metadata, smoothing defaults.
-- `assets/styles.css`: layout and visual design.
-
-## Windows/Conda TLS troubleshooting
-
-The proxy uses the `certifi` CA bundle explicitly. If a company VPN or TLS-inspecting
-proxy uses a private root certificate, export that certificate as PEM and set:
-
-```bat
-set SWOT_CA_BUNDLE=E:\path\to\corporate-ca-bundle.pem
-python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
-```
-
-For a temporary diagnostic only, certificate verification can be disabled:
-
-```bat
-set SWOT_DISABLE_SSL_VERIFY=1
-python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
-```
-
-Do not deploy with `SWOT_DISABLE_SSL_VERIFY=1`.
-
-### Timestamp validation
-
-Hydrocron rows are plotted only when `time_str` is a valid string timestamp inside the configured observation window. Empty values, `no_data`, numeric epoch-like values, sentinel values, dates before `CONFIG.startTime`, and future dates are ignored. This prevents malformed timestamps from appearing near 1970.
-
-## v12 selection fix
-
-The high-z-index selected-feature Leaflet pane has `pointer-events: none` so its full-map SVG renderer cannot block clicks on other water geometries after a selection is made or cleared.
-
-
-## Hydrocron product versions
-
-The application configuration uses the Version D Hydrocron collections:
-
-- `SWOT_L2_HR_LakeSP_D` for lakes
-- `SWOT_L2_HR_RiverSP_D` for reaches and nodes
-
-The `version=2.0.0` parameter in WFS requests is the OGC WFS protocol version, not a SWOT data-product version.
-
-
-## Version 15 UI adjustments
-
-- Restored the compact top-left brand block with linked SOS-WATER logo, title, and subtitle.
-- Only the product code `SWOT_L2_HR_RiverSP_D` is linked in the subtitle.
-- Orbit overlap polygons now use white outlines for clearer separation.
-
-
-## World overview inset
-
-On landscape screens at least 900 px wide, a compact world overview is shown in the lower-left. It uses a subdued label-free basemap, tracks the main-map extent with a red rectangle, and can be clicked to recenter the main map. It is hidden on portrait and mobile layouts.
-
-
-## Version 19
-
-- Initial y-axis limits use only standard-quality Observation points.
-- Y-axis padding is based on the observed span, not the absolute variable magnitude.
-- Suspect, rejected, and LOWESS-outlier markers are smaller; suspect uses an open diamond.
-- The overview uses one ROI representation at a time: rectangle below zoom 10, point from zoom 10.
-- The geocoder is positioned to the right of the overview on wide landscape screens.
-- The sliding panel remains light grey while the variable/plot/smoothing card is white.
-
-
-## Version 21 interface updates
-
-- Renamed the variable section to **Variable selection**.
-- Added a matching **Smoothing settings** heading.
-- Replaced the panel download, back, and close symbols with the supplied SVG icons.
-- Changed the Hydrocron loading message to **Loading data from Hydrocron…**.
-
-
-## Version 22
-
-- Added reach consensus and gauge-constrained consensus discharge variables with discharge-specific uncertainty and quality flags.
-- Enabled LOWESS by default for both discharge variables.
-- Initial quality-aware y-ranges include accepted and suspect observations.
-- Updated accepted and suspect marker styling.
-
-
-## Version 23
-
-- Masks Hydrocron numeric fill values `-999`, `-999.0`, `-999999999999`, and `-999999999999.0`.
-- Prevents JavaScript `Number(null)` from turning missing observations into plotted zeros.
-- Displays missing uncertainty or quality values as `N/A` in Plotly hover labels.
-
-
-## Version 25 changes
-
-- Observation-frequency classes now show mean revisit interval using the 20.86-day science-orbit repeat cycle.
-- Node markers use a larger transparent interaction target so compact nodes remain reliably clickable.
-
-
-## Hydrocron units
-
-Do not add `{field}_unit` names to the Hydrocron `fields` request. Hydrocron automatically returns unit columns for requested fields when units are available. The frontend reads those automatically returned columns for labels, axes, metadata, and hover text.
