@@ -249,10 +249,10 @@ function makeGeoJson(data, selected = false) {
     pointToLayer: (_, latlng) => {
       if (state.featureType === 'node') {
         return L.marker(latlng, {
-          pane,
+          pane: selected ? 'selected-feature' : 'water-features',
           icon: nodeIcon(selected),
           interactive: !selected,
-          bubblingMouseEvents: false,
+          bubblingMouseEvents: !selected,
           keyboard: false,
           riseOnHover: !selected,
           zIndexOffset: selected ? 2000 : 1000,
