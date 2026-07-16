@@ -7,36 +7,43 @@
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css">
-  <link rel="stylesheet" href="./assets/styles.css?v=29">
+  <link rel="stylesheet" href="./assets/styles.css?v=33">
 </head>
 <body>
   <main id="app">
     <div id="map" aria-label="SWOT water feature map"></div>
 
-    <header class="map-header">
-      <div class="brand">
+    <header class="top-bar">
+      <div class="top-bar-brand">
         <a class="brand-logo-link" href="https://www.sos-water.eu" target="_blank" rel="noopener noreferrer" aria-label="Visit SOS-WATER">
-          <img class="brand-logo" src="./assets/logo.png" alt="SOS-WATER project logo">
+          <img class="brand-logo" src="./assets/img/logo.png" alt="SOS-WATER project logo">
         </a>
-        <div class="brand-copy">
-          <strong>SWOT Lake and River Explorer</strong>
-          <small>
-            Explore global data on lakes and rivers from the Surface Water and Ocean Topography (SWOT) mission
-          </small>
-        </div>
+        <strong>SWOT Lake and River Explorer</strong>
       </div>
-      <div class="map-controls">
-        <nav class="feature-switcher" aria-label="Feature type">
-          <button data-feature="lake" class="active"><img src="./assets/icon_lake.svg" alt="">Lakes</button>
-          <button data-feature="reach"><img src="./assets/icon_reach.svg" alt="">Rivers</button>
-          <button data-feature="node"><img src="./assets/icon_node.svg" alt="">Nodes</button>
-        </nav>
-        <label class="frequency-toggle">
-          <input id="frequency-toggle" type="checkbox">
-          <span>Show observation frequency</span>
-        </label>
-      </div>
+
+      <a
+        class="top-bar-github"
+        href="https://github.com/mibrechb/swot-data-explorer"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="View SWOT Lake and River Explorer on GitHub"
+        title="View source on GitHub"
+      >
+        <img src="./assets/img/icon_github.svg" alt="">
+      </a>
     </header>
+
+    <div class="map-controls">
+      <nav class="feature-switcher" aria-label="Feature type">
+        <button data-feature="lake" class="active"><img src="./assets/img/icon_lake.svg" alt="">Lakes</button>
+        <button data-feature="reach"><img src="./assets/img/icon_reach.svg" alt="">Rivers</button>
+        <button data-feature="node"><img src="./assets/img/icon_node.svg" alt="">Nodes</button>
+      </nav>
+      <label class="frequency-toggle">
+        <input id="frequency-toggle" type="checkbox">
+        <span>Show observation frequency</span>
+      </label>
+    </div>
 
     <div id="map-status" class="map-status">Move or zoom the map to load features.</div>
     <div id="frequency-legend" class="frequency-legend" hidden></div>
@@ -46,27 +53,75 @@
       <div id="overview-map" class="overview-map"></div>
     </section>
 
-    <footer class="map-attribution-note">
-      Uses
-      <a href="https://swot.jpl.nasa.gov/" target="_blank" rel="noopener noreferrer">SWOT mission data</a>
-      served through the
-      <a href="https://podaac.github.io/hydrocron/" target="_blank" rel="noopener noreferrer">PO.DAAC Hydrocron API</a>.
+    <footer class="bottom-bar">
+      <div class="bottom-bar-text">
+        The SWOT Lake and River Explorer was developed as part of the
+        <a href="https://www.sos-water.eu" target="_blank" rel="noopener noreferrer">SOS-Water project</a>.
+        which has received funding from the European Union’s Horizon 
+        Europe research and innovation programme under the grant agreement no. 101059264 as 
+        well as the Swiss State Secretariat for Education, Research and Innovation (SERI).
+      </div>
+
+      <img class="bottom-bar-logo bottom-bar-logo-eu"
+           src="./assets/img/img_eu-funding-light.png"
+           alt="European Union funding acknowledgement">
+
+      <img class="bottom-bar-logo bottom-bar-logo-seri"
+           src="./assets/img/img_seri-funding-light.png"
+           alt="SERI funding acknowledgement">
     </footer>
+
+    <dialog id="welcome-dialog" class="welcome-dialog" aria-labelledby="welcome-title">
+      <div class="welcome-dialog-content">
+        <button id="welcome-close" class="welcome-close" type="button" aria-label="Close welcome message" title="Close"><span aria-hidden="true">×</span></button>
+
+        <div class="welcome-copy">
+          <h2 id="welcome-title">Welcome to the SWOT Lake and River Explorer</h2>
+          <p>
+            This tool lets you explore global hydrologic measurements for lakes and rivers from the
+            <a href="https://swot.jpl.nasa.gov/" target="_blank" rel="noopener noreferrer">Surface Water and Ocean Topography (SWOT) mission</a>.
+            Measurements are derived from high-resolution radar observations collected by the Ka-band Radar Interferometer (KaRIn) onboard SWOT.
+            The provided data is served through the
+            <a href="https://podaac.github.io/hydrocron/" target="_blank" rel="noopener noreferrer">PO.DAAC Hydrocron API</a>.
+          </p>
+        </div>
+
+        <hr class="welcome-divider">
+
+        <div class="welcome-project">
+          <img src="./assets/img/logo.png" alt="SOS-Water project logo">
+          <p>
+            This tool was developed as part of the SOS-Water EU Horizon project.
+            Check out <a href="https://www.sos-water.eu" target="_blank" rel="noopener noreferrer">sos-water.eu</a> for more information.
+          </p>
+        </div>
+
+        <div class="welcome-actions" aria-label="Welcome actions">
+          <button id="welcome-lake" class="welcome-destination" type="button">
+            <img src="./assets/img/icon_lake.svg" alt=""><span>Take me to a Lake</span>
+          </button>
+          <button id="welcome-reach" class="welcome-destination" type="button">
+            <img src="./assets/img/icon_reach.svg" alt=""><span>Take me to a River</span>
+          </button>
+          <button id="welcome-start" class="welcome-start" type="button">Start exploring</button>
+        </div>
+      </div>
+    </dialog>
 
     <aside id="details-panel" class="details-panel" aria-hidden="true">
       <div class="panel-shell">
         <div class="panel-topbar">
           <div class="panel-heading">
-            <img id="panel-feature-icon" class="feature-title-icon" src="./assets/icon_lake.svg" alt="">
+            <img id="panel-feature-icon" class="feature-title-icon" src="./assets/img/icon_lake.svg" alt="">
             <div class="panel-heading-copy">
               <strong id="panel-kicker">Selected feature</strong>
               <small id="panel-subtitle"></small>
             </div>
           </div>
           <div class="panel-actions">
-            <button id="panel-download" class="icon-button" aria-label="Download Hydrocron CSV" title="Download Hydrocron CSV"><img src="./assets/icon_download.svg" alt=""></button>
-            <button id="panel-back" class="icon-button" aria-label="Back to map" title="Back to map"><img src="./assets/icon_back.svg" alt=""></button>
-            <button id="panel-close" class="icon-button" aria-label="Close details" title="Close details"><img src="./assets/icon_close.svg" alt=""></button>
+            <button id="panel-download" class="icon-button" aria-label="Download Hydrocron CSV" title="Download Hydrocron CSV"><img src="./assets/img/icon_download.svg" alt=""></button>
+            <button id="panel-back" class="icon-button" aria-label="Back to map" title="Back to map"><img src="./assets/img/icon_back.svg" alt=""></button>
+            <button id="panel-close" class="icon-button" aria-label="Close details" title="Close details"><img src="./assets/img/icon_close.svg" alt=""></button>
           </div>
         </div>
 
@@ -104,6 +159,6 @@
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://unpkg.com/flatgeobuf@4.4.0/dist/flatgeobuf-geojson.min.js"></script>
-  <script type="module" src="./assets/app.js?v=29"></script>
+  <script type="module" src="./assets/app.js?v=33"></script>
 </body>
 </html>

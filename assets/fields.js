@@ -1,7 +1,7 @@
 export const FEATURE_CONFIG = {
   lake: {
     label: 'Lake',
-    icon: './assets/icon_lake.svg',
+    icon: './assets/img/icon_lake.svg',
     layer: 'swot_prior_lake_db',
     idCandidates: ['fid', 'lake_id'],
     feature: 'PriorLake',
@@ -20,7 +20,7 @@ export const FEATURE_CONFIG = {
   },
   reach: {
     label: 'River reach',
-    icon: './assets/icon_reach.svg',
+    icon: './assets/img/icon_reach.svg',
     layer: 'swot_prior_river_db',
     idCandidates: ['reach_id', 'fid'],
     feature: 'Reach',
@@ -32,7 +32,7 @@ export const FEATURE_CONFIG = {
   },
   node: {
     label: 'River node',
-    icon: './assets/icon_node.svg',
+    icon: './assets/img/icon_node.svg',
     layer: 'REF_DATA:swot_prior_river_db_node',
     idCandidates: ['node_id', 'fid'],
     feature: 'Node',

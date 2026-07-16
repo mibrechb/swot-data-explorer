@@ -190,3 +190,4 @@ data/orbit/tmp/
 
 # Cloudflare/Wrangler configuration
 wrangler.toml
+assets/img/funding/

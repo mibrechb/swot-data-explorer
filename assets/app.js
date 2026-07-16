@@ -155,6 +155,11 @@ const els = {
   frequencyToggle: document.querySelector('#frequency-toggle'),
   frequencyLegend: document.querySelector('#frequency-legend'),
   dataDescription: document.querySelector('#data-description-content'),
+  welcomeDialog: document.querySelector('#welcome-dialog'),
+  welcomeClose: document.querySelector('#welcome-close'),
+  welcomeStart: document.querySelector('#welcome-start'),
+  welcomeLake: document.querySelector('#welcome-lake'),
+  welcomeReach: document.querySelector('#welcome-reach'),
 };
 
 els.panelDownload.disabled = true;
@@ -605,7 +610,7 @@ async function loadVisibleFeatures() {
     if (state.featureLayer) map.removeLayer(state.featureLayer);
     state.featureLayer = null;
     setStatus(`Zoom to level ${minZoom} to load ${state.featureType}s.`, true);
-    return;
+    return null;
   }
 
   state.abortController?.abort();
@@ -627,10 +632,12 @@ async function loadVisibleFeatures() {
     const featurePlural = {lake: 'lakes', reach: 'reaches', node: 'nodes'}[state.featureType];
     setStatus(`Loaded ${count.toLocaleString()} ${count === 1 ? featureNoun : featurePlural}.`);
     state.selectionLayer?.bringToFront();
+    return {payload, layer: nextLayer};
   } catch (error) {
     if (error.name !== 'AbortError') {
       setStatus(`Geometry request failed: ${error.message}`, true);
     }
+    return null;
   }
 }
 
@@ -1147,16 +1154,96 @@ async function renderPlot(
   schedulePlotResize();
 }
 
+function closeWelcomeDialog() {
+  if (els.welcomeDialog?.open) els.welcomeDialog.close();
+}
+
+function configuredDestinations(featureType) {
+  const key = featureType === 'lake' ? 'lakes' : 'reaches';
+  const values = CONFIG.welcomeDestinations?.[key];
+  return Array.isArray(values) ? values.filter((item) =>
+    Number.isFinite(Number(item?.lat)) &&
+    Number.isFinite(Number(item?.lon)) &&
+    item?.id != null) : [];
+}
+
+function randomItem(items) {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function setFeatureType(featureType) {
+  if (!FEATURE_CONFIG[featureType]) return;
+  state.featureType = featureType;
+  document.querySelectorAll('[data-feature]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.feature === featureType);
+  });
+  if (state.featureLayer) map.removeLayer(state.featureLayer);
+  state.featureLayer = null;
+  closePanel({clear: true});
+}
+
+function featureFromLoadedLayer(featureId) {
+  let match = null;
+  state.featureLayer?.eachLayer((layer) => {
+    if (match || !layer.feature) return;
+    try {
+      if (getFeatureId(layer.feature.properties || {}) === String(featureId)) match = layer.feature;
+    } catch (_) {
+      // Ignore layers without a supported identifier.
+    }
+  });
+  return match;
+}
+
+async function takeMeToFeature(featureType) {
+  const destinations = configuredDestinations(featureType);
+  if (!destinations.length) {
+    setStatus(`No welcome ${featureType} destinations are configured.`, true);
+    return;
+  }
+
+  const destination = randomItem(destinations);
+  closeWelcomeDialog();
+  setFeatureType(featureType);
+  const zoom = Number(destination.zoom) || Math.max(CONFIG.minZoom[featureType], featureType === 'lake' ? 11 : 12);
+  map.setView([Number(destination.lat), Number(destination.lon)], zoom);
+  await nextAnimationFrame();
+  const result = await loadVisibleFeatures();
+  if (!result) return;
+
+  const feature = featureFromLoadedLayer(destination.id);
+  if (!feature) {
+    setStatus(`${destination.name || featureType} loaded, but feature ID ${destination.id} was not found in the current WFS response.`, true);
+    return;
+  }
+  await selectFeature(feature);
+}
+
+function openWelcomeDialog() {
+  if (!els.welcomeDialog || els.welcomeDialog.open) return;
+  const lakesConfigured = configuredDestinations('lake').length > 0;
+  const reachesConfigured = configuredDestinations('reach').length > 0;
+  els.welcomeLake.disabled = !lakesConfigured;
+  els.welcomeReach.disabled = !reachesConfigured;
+  els.welcomeLake.title = lakesConfigured ? '' : 'Add lake examples in config.js';
+  els.welcomeReach.title = reachesConfigured ? '' : 'Add reach examples in config.js';
+  els.welcomeDialog.showModal();
+  els.welcomeStart?.focus();
+}
+
+els.welcomeClose?.addEventListener('click', closeWelcomeDialog);
+els.welcomeStart?.addEventListener('click', closeWelcomeDialog);
+els.welcomeLake?.addEventListener('click', () => takeMeToFeature('lake'));
+els.welcomeReach?.addEventListener('click', () => takeMeToFeature('reach'));
+els.welcomeDialog?.addEventListener('click', (event) => {
+  if (event.target === els.welcomeDialog) closeWelcomeDialog();
+});
+window.addEventListener('load', openWelcomeDialog, {once:true});
+
 document.querySelectorAll('[data-feature]').forEach((button) => {
   button.addEventListener('click', () => {
     if (button.dataset.feature === state.featureType) return;
-    state.featureType = button.dataset.feature;
-    document.querySelectorAll('[data-feature]').forEach((candidate) => {
-      candidate.classList.toggle('active', candidate === button);
-    });
-    if (state.featureLayer) map.removeLayer(state.featureLayer);
-    state.featureLayer = null;
-    closePanel({clear: true});
+    setFeatureType(button.dataset.feature);
     loadVisibleFeatures();
   });
 });
