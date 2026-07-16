@@ -283,7 +283,7 @@ input[type=range] { width:100%; }
 @media (max-width: 760px), (orientation: portrait) and (max-width: 900px) {
   :root {
     --top-bar-height:58px;
-    --bottom-bar-height:82px;
+    --bottom-bar-height:102px;
     --layout-edge-gap:8px;
     --overlay-gap:10px;
     --bottom-bar-padding-block:7px;
