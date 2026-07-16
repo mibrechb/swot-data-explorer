@@ -18,6 +18,7 @@ const state = {
   frequencyAbortController: null,
   hydrocronAbortController: null,
   selectionRequestId: 0,
+  guidedNavigation: false,
 };
 
 const map = L.map('map', {
@@ -639,7 +640,7 @@ function buildWfsParams() {
   return params;
 }
 
-async function loadVisibleFeatures() {
+async function loadVisibleFeatures(targetId = null) {
   const minZoom = CONFIG.minZoom[state.featureType];
   if (map.getZoom() < minZoom) {
     if (state.featureLayer) map.removeLayer(state.featureLayer);
@@ -649,24 +650,56 @@ async function loadVisibleFeatures() {
   }
 
   state.abortController?.abort();
-  state.abortController = new AbortController();
+  const controller = new AbortController();
+  state.abortController = controller;
   setStatus(`Loading visible ${state.featureType}s…`, true);
 
   try {
     const response = await fetch(apiUrl('/api/wfs', buildWfsParams()), {
-      signal: state.abortController.signal,
+      signal: controller.signal,
     });
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+
     const payload = await response.json();
+    if (state.abortController !== controller) return null;
+
     const nextLayer = makeGeoJson(payload);
     nextLayer.addTo(map);
+
     if (state.featureLayer) map.removeLayer(state.featureLayer);
     state.featureLayer = nextLayer;
+
     const count = payload.features?.length || 0;
     const featureNoun = {lake: 'lake', reach: 'reach', node: 'node'}[state.featureType];
     const featurePlural = {lake: 'lakes', reach: 'reaches', node: 'nodes'}[state.featureType];
-    setStatus(`Loaded ${count.toLocaleString()} ${count === 1 ? featureNoun : featurePlural}.`);
+
+    setStatus(
+      `Loaded ${count.toLocaleString()} ${count === 1 ? featureNoun : featurePlural}.`,
+    );
     state.selectionLayer?.bringToFront();
+
+    if (targetId != null) {
+      const requestedId = String(targetId);
+      const feature = payload.features?.find((candidate) => {
+        try {
+          return getFeatureId(candidate.properties || {}) === requestedId;
+        } catch {
+          return false;
+        }
+      });
+
+      if (!feature) {
+        setStatus(
+          `${featureNoun} ID ${requestedId} was not found in the loaded area.`,
+          true,
+        );
+        return {payload, layer: nextLayer, selected: false};
+      }
+
+      void selectFeature(feature);
+      return {payload, layer: nextLayer, selected: true};
+    }
+
     return {payload, layer: nextLayer};
   } catch (error) {
     if (error.name !== 'AbortError') {
@@ -677,6 +710,8 @@ async function loadVisibleFeatures() {
 }
 
 function scheduleGeometryLoad() {
+  if (state.guidedNavigation) return;
+
   clearTimeout(state.debounceTimer);
   state.debounceTimer = setTimeout(() => {
     loadVisibleFeatures();
@@ -746,7 +781,8 @@ function titleCase(value) {
 
 function displayMetadataValue(field, value) {
   if (field === 'lake_name' || field === 'river_name') {
-    return titleCase(String(value).split(';')[0].trim());
+    // return titleCase(String(value).split(';')[0].trim());
+    return titleCase(String(value).replaceAll(';', ', '));
   }
   if (field === 'p_date_t0') {
     const text = String(value).trim();
@@ -1235,17 +1271,35 @@ function setFeatureType(featureType) {
   closePanel({clear: true});
 }
 
-function featureFromLoadedLayer(featureId) {
-  let match = null;
-  state.featureLayer?.eachLayer((layer) => {
-    if (match || !layer.feature) return;
-    try {
-      if (getFeatureId(layer.feature.properties || {}) === String(featureId)) match = layer.feature;
-    } catch (_) {
-      // Ignore layers without a supported identifier.
-    }
+function moveMapTo(lat, lon, zoom) {
+  const featureLocation = L.latLng(Number(lat), Number(lon));
+
+  const isMobile = window.matchMedia(
+    '(max-width: 760px), (orientation: portrait) and (max-width: 900px)',
+  ).matches;
+
+  const panelWidth = isMobile
+    ? 0
+    : els.panel.getBoundingClientRect().width;
+
+  // Shift the map center to the right so the configured feature appears
+  // centered in the unobstructed map area left of the details panel.
+  const projectedFeature = map.project(featureLocation, zoom);
+  const adjustedCenter = map.unproject(
+    projectedFeature.add(L.point(panelWidth / 2, 0)),
+    zoom,
+  );
+
+  const alreadyThere =
+    map.getZoom() === zoom &&
+    map.getCenter().distanceTo(adjustedCenter) < 1;
+
+  if (alreadyThere) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    map.once('moveend', resolve);
+    map.setView(adjustedCenter, zoom, {animate: true});
   });
-  return match;
 }
 
 async function takeMeToFeature(featureType) {
@@ -1256,20 +1310,29 @@ async function takeMeToFeature(featureType) {
   }
 
   const destination = randomItem(destinations);
-  closeWelcomeDialog();
-  setFeatureType(featureType);
-  const zoom = Number(destination.zoom) || Math.max(CONFIG.minZoom[featureType], featureType === 'lake' ? 11 : 12);
-  map.setView([Number(destination.lat), Number(destination.lon)], zoom);
-  await nextAnimationFrame();
-  const result = await loadVisibleFeatures();
-  if (!result) return;
+  const zoom = Number(destination.zoom) ||
+    Math.max(CONFIG.minZoom[featureType], featureType === 'lake' ? 11 : 12);
 
-  const feature = featureFromLoadedLayer(destination.id);
-  if (!feature) {
-    setStatus(`${destination.name || featureType} loaded, but feature ID ${destination.id} was not found in the current WFS response.`, true);
-    return;
+  state.guidedNavigation = true;
+  clearTimeout(state.debounceTimer);
+  state.abortController?.abort();
+
+  try {
+    closeWelcomeDialog();
+    setFeatureType(featureType);
+
+    await moveMapTo(destination.lat, destination.lon, zoom);
+    await loadVisibleFeatures(destination.id);
+  } catch (error) {
+    if (error.name !== 'AbortError') {
+      setStatus(
+        `Could not open ${destination.name || `the selected ${featureType}`}: ${error.message}`,
+        true,
+      );
+    }
+  } finally {
+    state.guidedNavigation = false;
   }
-  await selectFeature(feature);
 }
 
 function openWelcomeDialog() {

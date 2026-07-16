@@ -26,12 +26,16 @@ export const CONFIG = {
     lakes: [
       {name: 'Stausee Mattmark', lat: 46.039080113000374, lon: 7.9602166432414325, id: '2160048143', zoom: 13},
       {name: 'Upper Klamath Lake', lat: 42.410685487231795, lon: -121.9000745557349, id: '7740049563', zoom: 11},
-      {name: 'Tonle Sap', lat: 12.868743975081028, lon: 104.09873395272251, id: '4420024363', zoom: 10},
+      {name: 'Tonle Sap', lat: 12.868743975081028, lon: 104.09873395272251, id: '4420024363', zoom: 9},
+      {name: 'Starnberger See', lat: 47.913579432765566, lon: 11.315126539100765, id: '2270067462', zoom: 12},
+      {name: 'Vättern', lat: 58.341994056027424, lon: 14.50123853040547, id: '2440072192', zoom: 9},
     ],
     reaches: [
       {name: 'Mississippi River', lat: 31.1850047528024, lon: -91.58966477058752, id: '74230100041', zoom: 11},
-      {name: 'Amazon River', lat: -1.9027785333342313, lon: -53.73299192863913, id: '62235700021', zoom: 11},
-      {name: 'Mekong River', lat: 12.646028529727209, lon: 106.00550805282437, id: '44230000221', zoom: 11}
+      {name: 'Amazon River', lat: -1.9027785333342313, lon: -53.73299192863913, id: '62235700021', zoom: 10},
+      {name: 'Mekong River', lat: 12.646028529727209, lon: 106.00550805282437, id: '44230000221', zoom: 11},
+      {name: 'Nile River', lat: 29.015057898087626, lon: 31.046292702216313, id: '17211100141', zoom: 11},
+      {name: 'Rio Corubal', lat: 11.743206532693218, lon: -14.281213246249086, id: '14578000105', zoom: 11},
     ],
   },
 };

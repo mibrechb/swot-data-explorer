@@ -285,7 +285,7 @@ input[type=range] { width:100%; }
 @media (max-width: 760px), (orientation: portrait) and (max-width: 900px) {
   :root {
     --top-bar-height:58px;
-    --bottom-bar-height:102px;
+    --bottom-bar-height:120px;
     --layout-edge-gap:8px;
     --overlay-gap:10px;
     --bottom-bar-padding-block:7px;
@@ -303,8 +303,16 @@ input[type=range] { width:100%; }
     border-radius:9px;
   }
   .top-bar-brand strong {
-    max-width:58vw;
-    font-size:15px;
+    max-width: 58vw;
+    overflow: hidden;
+    display: -webkit-box;
+    font-size: 15px;
+    line-height: 1.15;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
   }
   .top-bar-github {
     width:38px;
