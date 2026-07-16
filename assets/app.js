@@ -399,43 +399,78 @@ function longestLineCoordinates(geometry) {
 }
 
 function lineLabelPlacement(feature) {
-  const coordinates = longestLineCoordinates(feature.geometry);
-  if (!coordinates) return null;
+  const viewport = L.bounds(L.point(0, 0), map.getSize());
+  const segments = [];
 
-  const projected = coordinates.map(([longitude, latitude]) =>
-    map.latLngToLayerPoint([latitude, longitude]));
-  const segmentLengths = projected.slice(1).map((point, index) =>
-    point.distanceTo(projected[index]));
-  const totalLength = segmentLengths.reduce((sum, length) => sum + length, 0);
+  for (const line of lineCoordinateSequences(feature.geometry)) {
+    for (let i = 1; i < line.length; i += 1) {
+      const start = map.latLngToContainerPoint([
+        line[i - 1][1],
+        line[i - 1][0],
+      ]);
+      const end = map.latLngToContainerPoint([
+        line[i][1],
+        line[i][0],
+      ]);
+
+      const clipped = L.LineUtil.clipSegment(
+        start,
+        end,
+        viewport,
+        false,
+      );
+
+      if (!clipped) continue;
+
+      const length = clipped[0].distanceTo(clipped[1]);
+      if (length > 0) {
+        segments.push({
+          start: clipped[0],
+          end: clipped[1],
+          length,
+        });
+      }
+    }
+  }
+
+  const totalLength = segments.reduce(
+    (sum, segment) => sum + segment.length,
+    0,
+  );
+
   if (totalLength < 45) return null;
 
-  const target = totalLength / 2;
-  let travelled = 0;
-  let segmentIndex = 0;
-  while (segmentIndex < segmentLengths.length - 1 &&
-         travelled + segmentLengths[segmentIndex] < target) {
-    travelled += segmentLengths[segmentIndex];
-    segmentIndex += 1;
+  let remaining = totalLength / 2;
+
+  for (const segment of segments) {
+    if (remaining > segment.length) {
+      remaining -= segment.length;
+      continue;
+    }
+
+    const fraction = remaining / segment.length;
+    const point = L.point(
+      segment.start.x +
+        (segment.end.x - segment.start.x) * fraction,
+      segment.start.y +
+        (segment.end.y - segment.start.y) * fraction,
+    );
+
+    let angle = Math.atan2(
+      segment.end.y - segment.start.y,
+      segment.end.x - segment.start.x,
+    ) * 180 / Math.PI;
+
+    if (angle > 90) angle -= 180;
+    if (angle < -90) angle += 180;
+
+    return {
+      latlng: map.containerPointToLatLng(point),
+      angle,
+    };
   }
 
-  const start = projected[segmentIndex];
-  const end = projected[segmentIndex + 1];
-  const fraction = segmentLengths[segmentIndex] === 0
-    ? 0
-    : (target - travelled) / segmentLengths[segmentIndex];
-  const midpoint = L.point(
-    start.x + (end.x - start.x) * fraction,
-    start.y + (end.y - start.y) * fraction,
-  );
-  const latlng = map.layerPointToLatLng(midpoint);
-  let angle = Math.atan2(end.y - start.y, end.x - start.x) * 180 / Math.PI;
-  let arrow = '→';
-  if (angle > 90 || angle < -90) {
-    angle += angle > 90 ? -180 : 180;
-    arrow = '←';
-  }
-
-  return {latlng, angle, arrow};
+  return null;
 }
 
 function addNadirLabels(layer, featureCollection) {
