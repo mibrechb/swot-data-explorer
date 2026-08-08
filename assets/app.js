@@ -1177,16 +1177,20 @@ async function fetchHydrocronCsv(params, signal) {
   }
   return text;
 }
-async function fetchOptionalDischargeCsv(params, signal) {
+async function fetchOptionalHydrocronCsv(
+  params,
+  signal,
+  label = 'Hydrocron request',
+) {
   try {
     return await fetchHydrocronCsv(params, signal);
   } catch (error) {
     if (error.name === 'AbortError') throw error;
 
-    // The availability list is intentionally permissive: a listed reach can
-    // still have no rows in Hydrocron. Treat that as "no L4 data returned"
-    // rather than failing the entire selected-feature request.
-    console.info('No L4 discharge returned for selected reach:', error.message);
+    // Missing feature IDs are possible in either product collection. Treat
+    // these as an unavailable dataset for the selected feature rather than
+    // failing the complete panel request.
+    console.info(`${label} returned no data:`, error.message);
     return null;
   }
 }
@@ -1248,17 +1252,28 @@ async function selectFeature(feature) {
 
   try {
     const signal = state.hydrocronAbortController.signal;
-    const primaryRequest = fetchHydrocronCsv(primaryParams, signal);
+
+    // Both product requests are independent. Version D remains preferred, but
+    // a missing Version D feature must not suppress otherwise valid L4 data.
+    const primaryRequest = fetchOptionalHydrocronCsv(
+      primaryParams,
+      signal,
+      `${cfg.collection} request`,
+    );
 
     const hasL4Discharge =
       state.featureType === 'reach' && reachHasL4Discharge(feature);
 
     const dischargeRequest = hasL4Discharge
-      ? fetchOptionalDischargeCsv(new URLSearchParams({
-        ...baseParams,
-        fields: queryFields({includeDischarge: true}),
-        collection_name: REACH_DISCHARGE_COLLECTION,
-      }), signal)
+      ? fetchOptionalHydrocronCsv(
+        new URLSearchParams({
+          ...baseParams,
+          fields: queryFields({includeDischarge: true}),
+          collection_name: REACH_DISCHARGE_COLLECTION,
+        }),
+        signal,
+        'L4 discharge request',
+      )
       : Promise.resolve(null);
 
     const [primaryCsv, dischargeCsv] = await Promise.all([
@@ -1268,31 +1283,59 @@ async function selectFeature(feature) {
 
     if (requestId !== state.selectionRequestId) return;
 
-    const primaryRows = parseHydrocronRows(primaryCsv);
+    let primaryRows = [];
+    if (primaryCsv) {
+      try {
+        primaryRows = parseHydrocronRows(primaryCsv);
+      } catch (error) {
+        console.info(
+          'Primary Hydrocron response could not be parsed:',
+          error.message,
+        );
+      }
+    }
 
     let dischargeRows = [];
     if (dischargeCsv) {
       try {
         dischargeRows = parseHydrocronRows(dischargeCsv);
       } catch (error) {
-        console.info('L4 discharge response could not be parsed:', error.message);
+        console.info(
+          'L4 discharge response could not be parsed:',
+          error.message,
+        );
       }
     }
 
-    // Version D is authoritative for the normal river variables. Optional L4
-    // discharge rows are appended only when the separate request succeeds.
-    state.dataframe = dischargeRows.length
-      ? [...primaryRows, ...dischargeRows]
-      : primaryRows;
+    // Version D is preferred for the normal variables, but L4-only reaches
+    // remain usable when Version D has no matching feature ID.
+    state.dataframe = [
+      ...primaryRows,
+      ...dischargeRows,
+    ];
 
-    // Keep the downloadable CSV as the original Version D response.
-    state.rawCsv = primaryCsv;
-    els.panelDownload.disabled = false;
-    if (!state.dataframe.length) throw new Error('No observations returned.');
+    state.rawCsv = primaryCsv || dischargeCsv || '';
+    els.panelDownload.disabled = !state.rawCsv;
+
+    if (!state.dataframe.length) {
+      renderDataDescription();
+      els.spinner.hidden = true;
+      els.loadingText.textContent =
+        'No SWOT observations were found for this feature in the available datasets.';
+      setStatus('No observations found for this feature.');
+      return;
+    }
+
     renderMetadata(state.dataframe);
     renderDataDescription();
     const initialVariable = populateVariables();
     renderPlot(false, initialVariable);
+
+    if (!primaryRows.length && dischargeRows.length) {
+      setStatus(
+        'Version D data unavailable; showing available L4 discharge data.',
+      );
+    }
   } catch (error) {
     if (error.name === 'AbortError' || requestId !== state.selectionRequestId) return;
     els.spinner.hidden = true;
