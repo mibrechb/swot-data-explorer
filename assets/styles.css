@@ -4,6 +4,15 @@
   --surface:rgba(255,255,255,.96);
   --accent:#176b87;
   --accent2:#2f91ad;
+  --map-feature-color:#176b87;
+  --map-discharge-color:#176b87;
+  --map-selected-color:#ef5a34;
+
+  --inset-ocean:#eef3f5;
+  --inset-land:#9caab2;
+  --inset-border:#d7e0e4;
+  --inset-country-border:#ffffff;
+  --inset-viewport:#d7191c;
   --shadow:0 18px 55px rgba(15,31,45,.18);
 
   --top-bar-height:72px;
@@ -367,7 +376,7 @@ input[type=range] { width:100%; }
     grid-template-columns:132px 1fr 36px;
   }
 }
-.frequency-legend { position:absolute; z-index:900; right:18px; bottom:calc(var(--bottom-bar-height) + var(--overlay-gap)); width:210px; padding:10px 12px; border-radius:12px; background:rgba(255,255,255,.94); box-shadow:var(--shadow); backdrop-filter:blur(12px); font-size:11px; color:var(--muted); }
+.frequency-legend { position:absolute; z-index:900; right:18px; bottom:calc(var(--bottom-bar-height) + var(--overlay-gap) + 52px); width:210px; padding:10px 12px; border-radius:12px; background:rgba(255,255,255,.94); box-shadow:var(--shadow); backdrop-filter:blur(12px); font-size:11px; color:var(--muted); }
 .frequency-legend strong { display:block; margin-bottom:7px; color:var(--ink); font-size:12px; line-height:1.25; }
 .frequency-legend strong span { color:var(--muted); font-size:10px; font-weight:600; }
 .frequency-categories { display:grid; grid-template-columns:repeat(4,minmax(34px,1fr)); gap:7px; }
@@ -447,67 +456,170 @@ input[type=range] { width:100%; }
      2px  0   0 #fff;
 }
 
-.leaflet-control-geocoder { margin-left:12px !important; margin-bottom:var(--overlay-gap) !important; border:0 !important; border-radius:12px !important; box-shadow:var(--shadow) !important; overflow:hidden; }
-.leaflet-control-geocoder-form input { min-width:250px; font:inherit; }
-@media (max-width:760px) { .leaflet-control-geocoder { margin-bottom:var(--overlay-gap) !important; } .leaflet-control-geocoder-form input { min-width:190px; } }
 
 
-/* Responsive global overview map. */
-.overview-control {
-  display: none;
-  position: absolute;
-  z-index: 880;
-  left: 12px;
-  bottom:calc(var(--bottom-bar-height) + var(--overlay-gap));
-  width: 274px;
-  padding: 5px;
-  border: 1px solid rgba(16, 32, 47, .18);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, .96);
-  box-shadow: 0 10px 28px rgba(15, 31, 45, .20);
-  pointer-events: auto;
-}
-
-.overview-label {
-  padding: 2px 5px 5px;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 750;
-  letter-spacing: .02em;
-  text-transform: uppercase;
-}
-
-.overview-map {
-  width: 262px;
-  height: 154px;
+/* Compact desktop basemap selector. */
+.basemap-selector {
+  border: 0 !important;
+  border-radius: 12px !important;
+  box-shadow: var(--shadow) !important;
   overflow: hidden;
-  border-radius: 8px;
-  background: #cfe8f1;
-  cursor: crosshair;
 }
 
-/* Let the pale-blue container tint the label-free overview tiles. */
-.overview-map .leaflet-tile-pane {
-  mix-blend-mode: multiply;
+.basemap-selector .leaflet-control-layers-toggle {
+  width: 42px !important;
+  height: 42px !important;
 }
 
-.overview-map .leaflet-tile {
-  filter: grayscale(1) contrast(.86) brightness(1.13);
+.basemap-selector.leaflet-control-layers-expanded {
+  padding: 9px 11px;
+  border-radius: 12px !important;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
 }
 
-.overview-map .leaflet-control-container {
-  display: none;
+.basemap-selector .leaflet-control-layers-base label {
+  margin: 4px 0;
+  color: var(--ink);
+  font-size: 13px;
 }
 
-@media (min-width: 900px) and (orientation: landscape) {
-  .overview-control {
-    display: block;
+/* Hide basemap switching on mobile / portrait layouts. */
+@media (max-width: 760px),
+       (orientation: portrait) and (max-width: 900px) {
+  .basemap-selector {
+    display: none !important;
+  }
+}
+
+.leaflet-control-geocoder {
+  margin-right:12px !important;
+  margin-bottom:var(--overlay-gap) !important;
+  border:0 !important;
+  border-radius:12px !important;
+  background:var(--surface) !important;
+  box-shadow:var(--shadow) !important;
+}
+
+/* Make the collapsed search affordance more obvious without changing the
+   geocoder plugin's native expanded geometry. */
+.leaflet-control-geocoder-icon {
+  position:relative;
+  width:168px !important;
+  height:42px !important;
+  padding-left:44px !important;
+  border-radius:12px !important;
+  background-position:12px 50% !important;
+  background-size:24px 24px !important;
+  box-sizing:border-box;
+}
+
+.leaflet-control-geocoder-icon::after {
+  content:"Search place";
+  position:absolute;
+  inset:0 10px 0 44px;
+  display:flex;
+  align-items:center;
+  color:var(--ink);
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:13px;
+  font-weight:400;
+  white-space:nowrap;
+}
+
+.leaflet-control-geocoder-expanded .leaflet-control-geocoder-icon {
+  width:36px !important;
+  height:36px !important;
+  padding-left:0 !important;
+  background-position:center !important;
+  background-size:22px 22px !important;
+}
+
+.leaflet-control-geocoder-expanded .leaflet-control-geocoder-icon::after {
+  display:none;
+}
+
+.leaflet-control-geocoder-form input {
+  min-width:250px;
+  font:inherit;
+}
+
+/* On mobile keep the original compact icon-only treatment. */
+@media (max-width:760px),
+       (orientation:portrait) and (max-width:900px) {
+  .leaflet-control-geocoder-icon {
+    width:42px !important;
+    height:42px !important;
+    padding-left:0 !important;
+    background-position:center !important;
   }
 
-  /* Place search to the right of the inset instead of stacking above it. */
-  .leaflet-control-geocoder {
-    margin-left: 308px !important;
-    margin-bottom:var(--overlay-gap) !important;
+  .leaflet-control-geocoder-icon::after {
+    display:none;
+  }
+
+  .leaflet-control-geocoder-form input {
+    min-width:190px;
+  }
+}
+
+
+/* Responsive projected global inset. */
+.global-inset {
+  width:var(--global-inset-width,262px);
+  height:var(--global-inset-height,154px);
+  margin-left:12px !important;
+  margin-bottom:var(--overlay-gap) !important;
+  overflow:hidden;
+  border:1px solid rgba(16,32,47,.18);
+  border-radius:12px;
+  background:var(--inset-ocean);
+  box-shadow:0 10px 28px rgba(15,31,45,.20);
+}
+
+.global-inset-svg {
+  display:block;
+  width:100%;
+  height:100%;
+}
+
+.global-inset-graticule {
+  stroke-width:.65;
+  opacity:.75;
+  vector-effect:non-scaling-stroke;
+}
+
+.global-inset-land {
+  stroke:none;
+}
+
+.global-inset-country-borders {
+  stroke-width:.7;
+  opacity:.9;
+  vector-effect:non-scaling-stroke;
+}
+
+.global-inset-viewport {
+  stroke-width:2.4;
+  fill-opacity:.10;
+  vector-effect:non-scaling-stroke;
+}
+
+.global-inset-viewport-circle {
+  stroke-width:2.2;
+  fill-opacity:.18;
+  vector-effect:non-scaling-stroke;
+}
+
+.global-inset--error {
+  opacity:.55;
+}
+
+@media (max-width:760px),
+       (orientation:portrait) and (max-width:900px) {
+  .global-inset {
+    display:none;
   }
 }
 
@@ -591,7 +703,7 @@ input[type=range] { width:100%; }
   transform: translate(-50%, -50%);
   border: 2px solid #fff;
   border-radius: 50%;
-  background: #176b87;
+  background: var(--map-feature-color);
   box-shadow: 0 0 0 1px rgba(16, 32, 47, .18);
 }
 
@@ -599,7 +711,7 @@ input[type=range] { width:100%; }
 .node-feature-marker:focus span {
   width: 14px;
   height: 14px;
-  background: #ef5a34;
+  background: var(--map-selected-color);
 }
 
 .node-feature-marker.selected {
@@ -610,7 +722,7 @@ input[type=range] { width:100%; }
 .node-feature-marker.selected span {
   width: 16px;
   height: 16px;
-  background: #ef5a34;
+  background: var(--map-selected-color);
 }
 @media (max-width: 760px) {
   .feature-switcher button {

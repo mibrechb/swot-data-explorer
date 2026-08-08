@@ -1,9 +1,11 @@
 import {CONFIG} from './config.js';
 import {FEATURE_CONFIG, META_LABELS, variableLabel, variableUnit} from './fields.js';
 import {robustLowess} from './smoothing.js';
+import {createGlobalInset} from './inset-map.js';
 
 const state = {
   featureType: 'lake',
+  basemap: 'street',
   featureLayer: null,
   selectionLayer: null,
   selectedFeature: null,
@@ -24,97 +26,154 @@ const state = {
   dischargeReachIdsPromise: null,
 };
 
+const MAP_STYLE = {
+  street: {
+    lakeStroke: '#16718d',
+    lakeFill: '#38a4c0',
+    feature: '#176b87',
+    discharge: '#176b87',
+    selectedLakeStroke: '#ef8b2c',
+    selectedLakeFill: '#ffb260',
+    selected: '#ef5a34',
+    nadir: '#151515',
+  },
+  satellite: {
+    lakeStroke: '#69dcff',
+    lakeFill: '#63d6ff',
+    feature: '#63d6ff',
+    discharge: '#63d6ff',
+    selectedLakeStroke: '#ffd166',
+    selectedLakeFill: '#ffb84d',
+    selected: '#ffb347',
+    nadir: '#ffffff',
+  },
+};
+
+function activeMapStyle() {
+  return MAP_STYLE[state.basemap];
+}
+
+function applyBasemapTheme(mode) {
+  state.basemap = mode;
+  document.documentElement.dataset.basemap = mode;
+
+  const style = activeMapStyle();
+  const root = document.documentElement.style;
+  root.setProperty('--map-feature-color', style.feature);
+  root.setProperty('--map-discharge-color', style.discharge);
+  root.setProperty('--map-selected-color', style.selected);
+}
+
+const WEB_MERCATOR_BOUNDS = L.latLngBounds(
+  [-85.05112878, -180],
+  [85.05112878, 180],
+);
+
 const map = L.map('map', {
   zoomControl: false,
   preferCanvas: true,
+  worldCopyJump: true,
+
+  // Longitude is intentionally unbounded/wrapping. Latitude remains clamped
+  // to the valid Web Mercator range.
+  maxBounds: L.latLngBounds(
+    [-85.05112878, -Infinity],
+    [85.05112878, Infinity],
+  ),
+  maxBoundsViscosity: 1,
 }).setView(CONFIG.initialCenter, CONFIG.initialZoom);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  attribution: '&copy; OpenStreetMap contributors',
-}).addTo(map);
+// Do not allow the viewport to become taller than one Web Mercator world.
+// This keeps the map within the valid latitude range on any screen size.
+function updateWorldMinZoom() {
+  const mapHeight = Math.max(1, map.getSize().y);
 
+  // Horizontal world repetition is intentional. Only prevent zooming out
+  // farther than one Web Mercator world vertically.
+  const minZoom = Math.max(
+    0,
+    Math.ceil(Math.log2(mapHeight / 256)),
+  );
 
-// Lightweight world overview map. It is visually hidden by CSS on mobile and
-// portrait layouts, but remains synchronised whenever the main map moves.
-const overviewMap = L.map('overview-map', {
-  attributionControl: false,
-  zoomControl: false,
-  dragging: false,
-  scrollWheelZoom: false,
-  doubleClickZoom: false,
-  boxZoom: false,
-  keyboard: false,
-  touchZoom: false,
-  tap: false,
-  preferCanvas: true,
-  maxBounds: [[-85, -180], [85, 180]],
-  maxBoundsViscosity: 1,
-}).setView([18, 0], 0);
+  map.setMinZoom(minZoom);
 
-L.tileLayer(
-  'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',
-  {
-    minZoom: 0,
-    maxZoom: 5,
-    noWrap: true,
-    opacity: 0.82,
-    subdomains: 'abcd',
-  },
-).addTo(overviewMap);
-
-const overviewViewport = L.rectangle(map.getBounds(), {
-  color: '#d7191c',
-  weight: 3,
-  opacity: 1,
-  fillColor: '#d7191c',
-  fillOpacity: 0.08,
-  interactive: false,
-}).addTo(overviewMap);
-
-const overviewViewportMarker = L.circleMarker(map.getCenter(), {
-  radius: 5,
-  color: '#d7191c',
-  weight: 3,
-  opacity: 1,
-  fillColor: '#d7191c',
-  fillOpacity: 0.18,
-  interactive: false,
-}).addTo(overviewMap);
-
-function updateOverviewMap() {
-  const bounds = map.getBounds();
-  const showMarker = map.getZoom() >= 10;
-
-  overviewViewport.setBounds(bounds);
-  overviewViewport.setStyle({opacity: showMarker ? 0 : 1, fillOpacity: showMarker ? 0 : 0.08});
-  overviewViewportMarker.setLatLng(bounds.getCenter());
-  overviewViewportMarker.setStyle({opacity: showMarker ? 1 : 0, fillOpacity: showMarker ? 0.18 : 0});
+  if (map.getZoom() < minZoom) {
+    map.setZoom(minZoom, {animate:false});
+  }
 }
 
-map.on('move zoom resize', updateOverviewMap);
+updateWorldMinZoom();
+map.on('resize', updateWorldMinZoom);
 
-overviewMap.on('click', (event) => {
-  map.setView(event.latlng, map.getZoom());
+const streetBasemap = L.tileLayer(
+  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors',
+  },
+);
+
+const satelliteBasemap = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  {
+    maxZoom: 19,
+    attribution:
+      'Tiles © Esri — Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, ' +
+      'Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+  },
+);
+
+streetBasemap.addTo(map);
+
+const basemapControl = L.control.layers(
+  {
+    'Street map': streetBasemap,
+    'Satellite': satelliteBasemap,
+  },
+  null,
+  {
+    position: 'topleft',
+    collapsed: true,
+  },
+).addTo(map);
+
+basemapControl.getContainer()?.classList.add('basemap-selector');
+
+applyBasemapTheme('street');
+
+map.on('baselayerchange', (event) => {
+  applyBasemapTheme(
+    event.layer === satelliteBasemap ? 'satellite' : 'street',
+  );
+  refreshMapSymbology();
+
+  if (state.frequencyEnabled) {
+    void loadObservationFrequency();
+  }
 });
 
-window.addEventListener('resize', () => {
-  overviewMap.invalidateSize({pan: false});
-  updateOverviewMap();
-});
 
-// Ensure the inset renders at its final CSS dimensions after initial layout.
-setTimeout(() => {
-  overviewMap.invalidateSize({pan: false});
-  updateOverviewMap();
-}, 0);
+
+// Responsive projected global inset. It follows the main viewport while
+// remaining more zoomed out, and stops at the Web Mercator world extent.
+document.querySelector('#overview-control')?.remove();
+
+void createGlobalInset(map).catch((error) => {
+  console.error('Inset map failed:', error);
+});
 
 if (L.Control?.geocoder) {
+  const photonGeocoder = L.Control.Geocoder.photon();
+
   L.Control.geocoder({
+    geocoder: photonGeocoder,
     defaultMarkGeocode: false,
-    position: 'bottomleft',
-    placeholder: 'Search place…',
+    position: 'bottomright',
+    placeholder: 'Type place…',
     collapsed: true,
+    suggestMinLength: 3,
+    suggestTimeout: 250,
+    showUniqueResult: false,
   })
     .on('markgeocode', (event) => {
       const bbox = event.geocode?.bbox;
@@ -268,23 +327,61 @@ function getFeatureId(properties) {
 }
 
 function geometryStyle() {
+  const style = activeMapStyle();
+
   if (state.featureType === 'lake') {
-    return {color: '#16718d', weight: 2.5, fillColor: '#38a4c0', fillOpacity: 0.18};
+    return {
+      color: style.lakeStroke,
+      weight: 2.5,
+      fillColor: style.lakeFill,
+      fillOpacity: 0.18,
+    };
   }
+
   if (state.featureType === 'reach') {
-    return {color: '#176b87', weight: 4, opacity: 0.9};
+    return {
+      color: style.feature,
+      weight: 4,
+      opacity: 0.95,
+    };
   }
-  return {radius: 4.5, color: '#fff', weight: 1.8, fillColor: '#176b87', fillOpacity: 0.9};
+
+  return {
+    radius: 4.5,
+    color: '#fff',
+    weight: 1.8,
+    fillColor: style.feature,
+    fillOpacity: 0.95,
+  };
 }
 
 function selectedStyle() {
+  const style = activeMapStyle();
+
   if (state.featureType === 'lake') {
-    return {color: '#ef8b2c', weight: 4, fillColor: '#ffb260', fillOpacity: 0.3};
+    return {
+      color: style.selectedLakeStroke,
+      weight: 4,
+      fillColor: style.selectedLakeFill,
+      fillOpacity: 0.3,
+    };
   }
+
   if (state.featureType === 'reach') {
-    return {color: '#ef5a34', weight: 7, opacity: 1};
+    return {
+      color: style.selected,
+      weight: 7,
+      opacity: 1,
+    };
   }
-  return {radius: 8, color: '#fff', weight: 2, fillColor: '#ef5a34', fillOpacity: 1};
+
+  return {
+    radius: 8,
+    color: '#fff',
+    weight: 2,
+    fillColor: style.selected,
+    fillOpacity: 1,
+  };
 }
 
 function nodeIcon(selected = false) {
@@ -358,6 +455,33 @@ function makeGeoJson(data, selected = false) {
       }
     },
   });
+}
+
+
+function refreshMapSymbology() {
+  if (state.featureLayer) {
+    state.featureLayer.eachLayer((layer) => {
+      if (state.featureType === 'node') {
+        layer.setIcon?.(nodeIcon(false));
+      } else {
+        layer.setStyle?.(geometryStyle());
+      }
+    });
+  }
+
+  if (state.selectionLayer) {
+    state.selectionLayer.eachLayer((layer) => {
+      if (state.featureType === 'node') {
+        layer.setIcon?.(nodeIcon(true));
+      } else {
+        layer.setStyle?.(selectedStyle());
+      }
+    });
+  }
+
+  if (state.featureType === 'reach' && state.featureLayer) {
+    renderDischargeMarkers(state.featureLayer);
+  }
 }
 
 
@@ -455,7 +579,7 @@ function renderDischargeMarkers(featureLayer) {
         <span style="
           width:30px;height:30px;display:flex;align-items:center;justify-content:center;
           border:2px solid #fff;border-radius:50%;
-          background:#176b87;
+          background:${activeMapStyle().discharge};
           box-shadow:0 2px 8px rgba(16,32,47,.28);
         ">
           <img
@@ -778,7 +902,7 @@ async function loadObservationFrequency() {
     const nadirLines = L.geoJSON(nadir, {
       pane: 'orbit-nadir',
       style: {
-        color: '#151515',
+        color: activeMapStyle().nadir,
         weight: 3.2,
         opacity: 0.95,
         dashArray: '8 5',
@@ -1206,7 +1330,7 @@ function renderDataDescription() {
 
   const dischargeDescription = hasL4Discharge ? `
     <div style="margin-top:14px">
-    <p>This reach has additional <strong>SWOT Level 4 Sword of Science (SoS) River Discharge, Version 3</strong> data available. Sword of Science data products are generated from the open-source SWOT Confluence program and contain river discharge parameter estimates.</p>
+    <p>This reach has additional <strong>SWOT Level 4 Sword of Science (SoS) River Discharge, Version 3</strong> data available. Sword of Science data products are generated from the open-source SWOT Confluence program and contain river discharge parameter estimates. The individual discharge algorithms may have sparse coverage, while the consensus estimate is generally the most complete. All displayed discharge values are treated as m³/s.</p>
     <div class="dataset-citation">
       <p>SWOT Discharge Algorithm Working Group (DAWG). 2025. <em>SWOT discharge prior information and processing outputs.</em> Ver. 3.0. PO.DAAC, CA, USA.
       <a href="https://doi.org/10.5067/SWOT-SOS-RD3" target="_blank"
@@ -1215,7 +1339,7 @@ function renderDataDescription() {
     </div>` : '';
 
   els.dataDescription.innerHTML = `
-    <p>River reach and node observations on surface elevation, width and slope are from <strong>SWOT_L2_HR_RiverSP_D</strong>.
+    <p>River reach and node observations are from <strong>SWOT_L2_HR_RiverSP_D</strong>.
     This dataset provides hydrologic measurements for predefined river reaches and nodes,
     derived from high-resolution radar observations collected by the Ka-band Radar
     Interferometer (KaRIn) aboard the SWOT satellite. From April to July 2023, data may be
