@@ -3,13 +3,24 @@
 
 This repository contains a responsive data explorer based on Leaflet and Plotly for data from the Surface Water and Ocean Topography (SWOT) mission.
 
-A mapview allows to display lake, river reach and river node geometries from the SWOT Prior Lake and SWOT SWORD River Dataset served by THEIA Hydroweb GeoServer. Selecting features allows to load and plot corresponding SWOT Level 2 River and Lake Single-Pass data server over the Hydrocron API.
+A map view allows users to display lake, river reach, and river node geometries from the SWOT Prior Lake Database and SWOT SWORD River Dataset served by the THEIA HydroWeb GeoServer. Selecting a feature loads and plots the corresponding SWOT Level 2 Lake and River Single-Pass observations [1,2], as well as Level 4 Discharge Algorithm Working Group (DAWG) discharge estimates where available [3], served through the Hydrocron API.
 
 Additional features include an observation frequency layer, a geosearch integration, line fitting based on LOWESS as well as download capabilities for raw data and figures.
 
 This repository is part of SOS-Water project - Water Resources System Safe Operating Space in a Changing Climate and Society ([DOI:10.3030/101059264](https://cordis.europa.eu/project/id/101059264)). Other code contributions to D3.2 can be found at the [SOS-Water - WP3 Earth Observation repository](https://gitlab.eawag.ch/surf/remote-sensing/sos-water/sosw_wp3).
 
 Check out the project website at [sos-water.eu](https://sos-water.eu) for more information on the project.
+
+### Data References
+
+[1] **SWOT. (2025).** *SWOT Level 2 Lake Single-Pass Vector Data Product, Version D* [Dataset]. NASA Physical Oceanography Distributed Active Archive Center.  
+https://doi.org/10.5067/SWOT-LAKESP-D
+
+[2] **SWOT. (2025).** *SWOT Level 2 River Single-Pass Vector Data Product, Version D* [Dataset]. NASA Physical Oceanography Distributed Active Archive Center.  
+https://doi.org/10.5067/SWOT-RIVERSP-D
+
+[3] **SWOT Discharge Algorithm Working Group (DAWG). (2025).** *SWOT discharge prior information and processing outputs*. Ver. 3.0. PO.DAAC, CA, USA.  
+https://doi.org/10.5067/SWOT-SOS-RD3
 
 ## How to use
 ### Web-hosting architecture
@@ -64,8 +75,18 @@ These can be generated using the [SWOT operational orbit data](https://www.aviso
 
 ```bat
 python preprocess_orbit_vectors.py ^
-  --swath E:\path\to\swot_swath.shp ^
-  --nadir E:\path\to\swot_nadir.shp
+  --swath X:\path\to\swot_swath.shp ^
+  --nadir X:\path\to\swot_nadir.shp
+```
+
+### Generate a reach identifier whitelist for discharge data
+
+To display Level-4 discharge data, a list is used to only show and request it from reaches with available associated data loaded from `data/discharge/reach-ids_SWOT_L4_HR_DAWG_SOS_DISCHARGE_V3.json`.
+
+The list can be generated from a local Level-4 dataset using:
+
+```bat
+python collect_discharge_reachids.py
 ```
 
 ### Deploy Cloudflare Worker

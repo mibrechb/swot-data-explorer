@@ -19,6 +19,9 @@ const state = {
   hydrocronAbortController: null,
   selectionRequestId: 0,
   guidedNavigation: false,
+  dischargeMarkerLayer: null,
+  dischargeReachIds: null,
+  dischargeReachIdsPromise: null,
 };
 
 const map = L.map('map', {
@@ -127,6 +130,8 @@ map.createPane('orbit-nadir');
 map.getPane('orbit-nadir').style.zIndex = 360;
 map.createPane('water-features');
 map.getPane('water-features').style.zIndex = 430;
+map.createPane('discharge-availability');
+map.getPane('discharge-availability').style.zIndex = 480;
 map.createPane('selected-feature');
 map.getPane('selected-feature').style.zIndex = 450;
 map.getPane('selected-feature').style.pointerEvents = 'none';
@@ -164,6 +169,7 @@ const els = {
 };
 
 els.panelDownload.disabled = true;
+prepareStatusStack();
 
 function nextAnimationFrame() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
@@ -192,13 +198,64 @@ function apiUrl(path, params) {
   return `${base}${path}?${params.toString()}`;
 }
 
+function prepareStatusStack() {
+  els.status.textContent = '';
+  Object.assign(els.status.style, {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '7px',
+    width: 'min(92vw, 560px)',
+    padding: '0',
+    background: 'transparent',
+    boxShadow: 'none',
+    borderRadius: '0',
+    pointerEvents: 'none',
+  });
+}
+
+function statusChannel(message) {
+  if (/orbit|overlap|nadir|observation[- ]frequency/i.test(message)) return 'orbit';
+  if (/discharge|reach ID list/i.test(message)) return 'discharge';
+  if (/hydrocron|data request/i.test(message)) return 'data';
+  if (
+    /loading visible|geometry request|zoom to level|loaded .* (lake|lakes|reach|reaches|node|nodes)/i
+      .test(message)
+  ) return 'geometry';
+  return 'general';
+}
+
 function setStatus(message, persistent = false) {
-  els.status.textContent = message;
-  els.status.style.display = 'block';
+  const key = statusChannel(message);
+  let toast = els.status.querySelector(`[data-status-key="${key}"]`);
+
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.dataset.statusKey = key;
+    Object.assign(toast.style, {
+      display: 'block',
+      maxWidth: '100%',
+      padding: '8px 13px',
+      borderRadius: '12px',
+      background: 'rgba(16,32,47,.90)',
+      color: '#fff',
+      boxShadow: '0 8px 24px rgba(15,31,45,.18)',
+      fontSize: '12px',
+      lineHeight: '1.35',
+      pointerEvents: 'none',
+    });
+    els.status.append(toast);
+  }
+
+  toast.textContent = message;
+  clearTimeout(toast._hideTimer);
+
   if (!persistent) {
-    setTimeout(() => {
-      if (els.status.textContent === message) els.status.style.display = 'none';
-    }, 2200);
+    toast._hideTimer = setTimeout(() => toast.remove(), 2800);
+  }
+
+  while (els.status.children.length > 4) {
+    els.status.firstElementChild?.remove();
   }
 }
 
@@ -244,15 +301,21 @@ function nodeIcon(selected = false) {
 }
 
 function makeGeoJson(data, selected = false) {
-  const style = selected ? selectedStyle() : geometryStyle();
+  const selectedFeatureStyle = selected ? selectedStyle() : null;
 
   return L.geoJSON(data, {
     pane: selected ? 'selected-feature' : 'water-features',
     interactive: !selected,
     bubblingMouseEvents: !selected,
-    style: () => style,
+    style: (feature) => selected
+      ? selectedFeatureStyle
+      : geometryStyle(feature),
 
-    pointToLayer: (_, latlng) => {
+    pointToLayer: (feature, latlng) => {
+      const style = selected
+        ? selectedFeatureStyle
+        : geometryStyle(feature);
+
       if (state.featureType === 'node') {
         return L.marker(latlng, {
           pane: selected ? 'selected-feature' : 'water-features',
@@ -279,10 +342,11 @@ function makeGeoJson(data, selected = false) {
       });
 
       if (state.featureType !== 'node') {
+        const baseStyle = geometryStyle(feature);
         layer.on({
           mouseover: () => {
             layer.setStyle({
-              weight: (style.weight || 1) + 2,
+              weight: (baseStyle.weight || 1) + 2,
             });
           },
           mouseout: () => {
@@ -296,6 +360,135 @@ function makeGeoJson(data, selected = false) {
   });
 }
 
+
+const REACH_DISCHARGE_COLLECTION = 'SWOT_L2_HR_RiverSP_2.0';
+const REACH_DISCHARGE_ID_FILE =
+  './data/discharge/reach-ids_SWOT_L4_HR_DAWG_SOS_DISCHARGE_V3.json';
+
+// Hydrocron exposes the L4 SoS fields through Version 2.0 reach calls.
+// dschg_c is kept as a separate L2/NRT field; it remains unselectable when empty.
+const REACH_DISCHARGE_FIELDS = [
+  'dschg_c',
+  'sos_consensus_q',
+  'sos_hivdi_q',
+  'sos_metroman_q',
+  'sos_momma_q',
+  'sos_sad_q',
+  'sos_sic4dvar_q',
+  'sos_lakeflow_q',
+];
+
+async function loadDischargeReachIds() {
+  if (state.dischargeReachIds) return state.dischargeReachIds;
+
+  if (!state.dischargeReachIdsPromise) {
+    state.dischargeReachIdsPromise = fetch(
+      new URL(REACH_DISCHARGE_ID_FILE, document.baseURI),
+    )
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`${response.status} ${response.statusText}`);
+        }
+        return response.json();
+      })
+      .then((values) => {
+        if (!Array.isArray(values)) {
+          throw new Error('Expected a JSON array of reach IDs.');
+        }
+        state.dischargeReachIds = new Set(values.map(String));
+        return state.dischargeReachIds;
+      })
+      .catch((error) => {
+        state.dischargeReachIds = new Set();
+        setStatus(
+          `Discharge reach ID list could not be loaded: ${error.message}`,
+          true,
+        );
+        return state.dischargeReachIds;
+      });
+  }
+
+  return state.dischargeReachIdsPromise;
+}
+
+function reachHasL4Discharge(feature) {
+  if (state.featureType !== 'reach' || !state.dischargeReachIds) return false;
+  const reachId = feature?.properties?.reach_id;
+  return reachId != null && state.dischargeReachIds.has(String(reachId));
+}
+
+function clearDischargeMarkers() {
+  if (state.dischargeMarkerLayer) map.removeLayer(state.dischargeMarkerLayer);
+  state.dischargeMarkerLayer = null;
+}
+
+function dischargeMarkerCenter(layer) {
+  if (typeof layer.getCenter === 'function') {
+    try {
+      return layer.getCenter();
+    } catch (_) {
+      // Fall through to bounds.
+    }
+  }
+  const bounds = layer.getBounds?.();
+  return bounds?.isValid?.() ? bounds.getCenter() : null;
+}
+
+function renderDischargeMarkers(featureLayer) {
+  clearDischargeMarkers();
+  if (state.featureType !== 'reach' || !state.dischargeReachIds?.size) return;
+
+  const markers = L.layerGroup();
+
+  featureLayer.eachLayer((layer) => {
+    const feature = layer.feature;
+    if (!feature || !reachHasL4Discharge(feature)) return;
+
+    const center = dischargeMarkerCenter(layer);
+    if (!center) return;
+
+    const icon = L.divIcon({
+      className: '',
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
+      html: `
+        <span style="
+          width:30px;height:30px;display:flex;align-items:center;justify-content:center;
+          border:2px solid #fff;border-radius:50%;
+          background:#176b87;
+          box-shadow:0 2px 8px rgba(16,32,47,.28);
+        ">
+          <img
+            src="./assets/img/icon_discharge.svg"
+            alt=""
+            style="
+              width:16px;height:16px;display:block;
+              object-fit:contain;
+              filter:brightness(0) invert(1);
+              pointer-events:none;
+            "
+          >
+        </span>`,
+    });
+
+    const marker = L.marker(center, {
+      pane: 'discharge-availability',
+      icon,
+      keyboard: true,
+      riseOnHover: false,
+      zIndexOffset: 2000,
+    });
+
+    marker.on('click', (event) => {
+      L.DomEvent.stopPropagation(event);
+      selectFeature(feature);
+    });
+
+    marker.addTo(markers);
+  });
+
+  state.dischargeMarkerLayer = markers.addTo(map);
+}
 
 const SCIENCE_ORBIT_REPEAT_DAYS = 20.86;
 
@@ -642,25 +835,37 @@ function buildWfsParams() {
 
 async function loadVisibleFeatures(targetId = null) {
   const minZoom = CONFIG.minZoom[state.featureType];
+  const featureNoun = {lake: 'lake', reach: 'reach', node: 'node'}[state.featureType];
+  const featurePlural = {lake: 'lakes', reach: 'reaches', node: 'nodes'}[state.featureType];
+
   if (map.getZoom() < minZoom) {
     if (state.featureLayer) map.removeLayer(state.featureLayer);
     state.featureLayer = null;
-    setStatus(`Zoom to level ${minZoom} to load ${state.featureType}s.`, true);
+    clearDischargeMarkers();
+    setStatus(`Zoom to level ${minZoom} to load ${featurePlural}.`, true);
     return null;
   }
 
   state.abortController?.abort();
   const controller = new AbortController();
   state.abortController = controller;
-  setStatus(`Loading visible ${state.featureType}s…`, true);
+  setStatus(`Loading visible ${featurePlural}…`, true);
 
   try {
+    const dischargeIdsRequest = state.featureType === 'reach'
+      ? loadDischargeReachIds()
+      : Promise.resolve(null);
+
     const response = await fetch(apiUrl('/api/wfs', buildWfsParams()), {
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
 
-    const payload = await response.json();
+    const [payload] = await Promise.all([
+      response.json(),
+      dischargeIdsRequest,
+    ]);
+
     if (state.abortController !== controller) return null;
 
     const nextLayer = makeGeoJson(payload);
@@ -669,10 +874,9 @@ async function loadVisibleFeatures(targetId = null) {
     if (state.featureLayer) map.removeLayer(state.featureLayer);
     state.featureLayer = nextLayer;
 
-    const count = payload.features?.length || 0;
-    const featureNoun = {lake: 'lake', reach: 'reach', node: 'node'}[state.featureType];
-    const featurePlural = {lake: 'lakes', reach: 'reaches', node: 'nodes'}[state.featureType];
+    renderDischargeMarkers(nextLayer);
 
+    const count = payload.features?.length || 0;
     setStatus(
       `Loaded ${count.toLocaleString()} ${count === 1 ? featureNoun : featurePlural}.`,
     );
@@ -781,9 +985,9 @@ function titleCase(value) {
 
 function displayMetadataValue(field, value) {
   if (field === 'lake_name' || field === 'river_name') {
-    // return titleCase(String(value).split(';')[0].trim());
     return titleCase(String(value).replaceAll(';', ', '));
   }
+
   if (field === 'p_date_t0') {
     const text = String(value).trim();
     const isoDate = text.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
@@ -793,6 +997,12 @@ function displayMetadataValue(field, value) {
       ? new Date(parsed).toISOString().slice(0, 10)
       : text;
   }
+
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    return numeric.toFixed(1);
+  }
+
   return value;
 }
 
@@ -814,17 +1024,60 @@ function renderMetadata(rows) {
     .join('');
 }
 
-function queryFields() {
+function queryFields({includeDischarge = false} = {}) {
   const cfg = FEATURE_CONFIG[state.featureType];
+  const dischargeFields = new Set(REACH_DISCHARGE_FIELDS);
+  const variables = includeDischarge
+    ? REACH_DISCHARGE_FIELDS
+    : cfg.variables.filter((field) => !dischargeFields.has(field));
+
   const fields = [
-    ...cfg.variables,
-    ...cfg.metadata,
-    ...(cfg.qualityFields || []),
+    ...variables,
+    ...(includeDischarge ? [] : cfg.metadata),
+    ...(includeDischarge ? [] : (cfg.qualityFields || [])),
   ];
-  return [...new Set([
-    'time_str',
-    ...fields,
-  ])].join(',');
+
+  return [...new Set(['time_str', ...fields])].join(',');
+}
+
+async function fetchHydrocronCsv(params, signal) {
+  const response = await fetch(apiUrl('/api/hydrocron', params), {signal});
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+
+  let text = await response.text();
+  try {
+    const payload = JSON.parse(text);
+    text = payload?.results?.csv || text;
+  } catch (_) {
+    // Hydrocron may already return raw CSV.
+  }
+  return text;
+}
+async function fetchOptionalDischargeCsv(params, signal) {
+  try {
+    return await fetchHydrocronCsv(params, signal);
+  } catch (error) {
+    if (error.name === 'AbortError') throw error;
+
+    // The availability list is intentionally permissive: a listed reach can
+    // still have no rows in Hydrocron. Treat that as "no L4 data returned"
+    // rather than failing the entire selected-feature request.
+    console.info('No L4 discharge returned for selected reach:', error.message);
+    return null;
+  }
+}
+
+
+function parseHydrocronRows(csvText) {
+  const parsed = Papa.parse(csvText, {
+    header: true,
+    dynamicTyping: true,
+    skipEmptyLines: true,
+  });
+
+  return parsed.data.map((row) => Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [key, normalise(value)]),
+  ));
 }
 
 async function selectFeature(feature) {
@@ -855,40 +1108,62 @@ async function selectFeature(feature) {
   els.loadingText.textContent = 'Loading data from Hydrocron…';
 
   const endTime = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
-  const params = new URLSearchParams({
+  const baseParams = {
     output: 'csv',
     start_time: CONFIG.startTime,
     end_time: endTime,
-    fields: queryFields(),
     feature: cfg.feature,
     feature_id: id,
+  };
+
+  const primaryParams = new URLSearchParams({
+    ...baseParams,
+    fields: queryFields(),
     collection_name: cfg.collection,
   });
 
   try {
-    const response = await fetch(apiUrl('/api/hydrocron', params), {
-      signal: state.hydrocronAbortController.signal,
-    });
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-    let text = await response.text();
-    try {
-      const payload = JSON.parse(text);
-      text = payload?.results?.csv || text;
-    } catch (_) {
-      // Hydrocron may already return raw CSV.
-    }
-    state.rawCsv = text;
-    els.panelDownload.disabled = false;
-    const parsed = Papa.parse(text, {
-      header: true,
-      dynamicTyping: true,
-      skipEmptyLines: true,
-    });
+    const signal = state.hydrocronAbortController.signal;
+    const primaryRequest = fetchHydrocronCsv(primaryParams, signal);
+
+    const hasL4Discharge =
+      state.featureType === 'reach' && reachHasL4Discharge(feature);
+
+    const dischargeRequest = hasL4Discharge
+      ? fetchOptionalDischargeCsv(new URLSearchParams({
+        ...baseParams,
+        fields: queryFields({includeDischarge: true}),
+        collection_name: REACH_DISCHARGE_COLLECTION,
+      }), signal)
+      : Promise.resolve(null);
+
+    const [primaryCsv, dischargeCsv] = await Promise.all([
+      primaryRequest,
+      dischargeRequest,
+    ]);
+
     if (requestId !== state.selectionRequestId) return;
 
-    state.dataframe = parsed.data.map((row) => Object.fromEntries(
-      Object.entries(row).map(([key, value]) => [key, normalise(value)]),
-    ));
+    const primaryRows = parseHydrocronRows(primaryCsv);
+
+    let dischargeRows = [];
+    if (dischargeCsv) {
+      try {
+        dischargeRows = parseHydrocronRows(dischargeCsv);
+      } catch (error) {
+        console.info('L4 discharge response could not be parsed:', error.message);
+      }
+    }
+
+    // Version D is authoritative for the normal river variables. Optional L4
+    // discharge rows are appended only when the separate request succeeds.
+    state.dataframe = dischargeRows.length
+      ? [...primaryRows, ...dischargeRows]
+      : primaryRows;
+
+    // Keep the downloadable CSV as the original Version D response.
+    state.rawCsv = primaryCsv;
+    els.panelDownload.disabled = false;
     if (!state.dataframe.length) throw new Error('No observations returned.');
     renderMetadata(state.dataframe);
     renderDataDescription();
@@ -907,6 +1182,7 @@ function fieldUnit(field) {
 
 function renderDataDescription() {
   const isLake = state.featureType === 'lake';
+
   if (isLake) {
     els.dataDescription.innerHTML = `
       <p>Lake observations shown are from <strong>SWOT_L2_HR_LakeSP_D</strong>. 
@@ -924,20 +1200,33 @@ function renderDataDescription() {
       </div>`;
     return;
   }
-  els.dataDescription.innerHTML = `
-    <p>River reach and node observations are from <strong>SWOT_L2_HR_RiverSP_D</strong>. 
-    This dataset provides hydrologic measurements for predefined river reaches and nodes, 
-    derived from high-resolution radar observations collected by the Ka-band Radar 
-    Interferometer (KaRIn) aboard the SWOT satellite. The variables contained include water 
-    surface elevation, slope, width, area, and discharge estimates for each reach, along with 
-    corresponding node-level details. From April to July 2023, data may be unusually frequent or absent
-      before the transition from calibration to operational orbit. Discharge is currently not yet included in Version D and 
-    is being disseminated separately in <strong>SWOT_L4_HR_DAWG_SOS_DISCHARGE_V3</strong>. 
-    Hydrocron integration is underway and being tracked in <a href="https://github.com/podaac/hydrocron/issues/308" 
-    target="_blank" rel="noopener noreferrer">podaac/hydrocron issue 308</a>.</p>
+
+  const hasL4Discharge =
+    state.featureType === 'reach' && reachHasL4Discharge(state.selectedFeature);
+
+  const dischargeDescription = hasL4Discharge ? `
+    <div style="margin-top:14px">
+    <p>This reach has additional <strong>SWOT Level 4 Sword of Science (SoS) River Discharge, Version 3</strong> data available. Sword of Science data products are generated from the open-source SWOT Confluence program and contain river discharge parameter estimates.</p>
     <div class="dataset-citation">
-      <p>SWOT. (2025). <em>SWOT Level 2 River Single-Pass Vector Data Product</em> [Dataset]. NASA Physical Oceanography Distributed Active Archive Center. <a href="https://doi.org/10.5067/SWOT-RIVERSP-D" target="_blank" rel="noopener noreferrer">https://doi.org/10.5067/SWOT-RIVERSP-D</a></p>
-    </div>`;
+      <p>SWOT Discharge Algorithm Working Group (DAWG). 2025. <em>SWOT discharge prior information and processing outputs.</em> Ver. 3.0. PO.DAAC, CA, USA.
+      <a href="https://doi.org/10.5067/SWOT-SOS-RD3" target="_blank"
+      rel="noopener noreferrer">https://doi.org/10.5067/SWOT-SOS-RD3</a></p>
+    </div>
+    </div>` : '';
+
+  els.dataDescription.innerHTML = `
+    <p>River reach and node observations on surface elevation, width and slope are from <strong>SWOT_L2_HR_RiverSP_D</strong>.
+    This dataset provides hydrologic measurements for predefined river reaches and nodes,
+    derived from high-resolution radar observations collected by the Ka-band Radar
+    Interferometer (KaRIn) aboard the SWOT satellite. From April to July 2023, data may be
+    unusually frequent or absent before the transition from calibration to operational orbit.</p>
+    <div class="dataset-citation">
+      <p>SWOT. (2025). <em>SWOT Level 2 River Single-Pass Vector Data Product</em>
+      [Dataset]. NASA Physical Oceanography Distributed Active Archive Center.
+      <a href="https://doi.org/10.5067/SWOT-RIVERSP-D" target="_blank"
+      rel="noopener noreferrer">https://doi.org/10.5067/SWOT-RIVERSP-D</a></p>
+    </div>
+    ${dischargeDescription}`;
 }
 
 function populateVariables() {
@@ -1268,6 +1557,7 @@ function setFeatureType(featureType) {
   });
   if (state.featureLayer) map.removeLayer(state.featureLayer);
   state.featureLayer = null;
+  clearDischargeMarkers();
   closePanel({clear: true});
 }
 

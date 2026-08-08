@@ -32,10 +32,10 @@ export const CONFIG = {
     ],
     reaches: [
       {name: 'Mississippi River', lat: 31.1850047528024, lon: -91.58966477058752, id: '74230100041', zoom: 11},
-      {name: 'Amazon River', lat: -1.9027785333342313, lon: -53.73299192863913, id: '62235700021', zoom: 10},
-      {name: 'Mekong River', lat: 12.646028529727209, lon: 106.00550805282437, id: '44230000221', zoom: 11},
+      {name: 'Amazon River', lat: -1.9027785333342313, lon: -53.73299192863913, id: '62235900011', zoom: 10},
+      {name: 'Mekong River', lat: 13.753118586711851, lon: 105.9783686829647, id: '44250000021', zoom: 11},
       {name: 'Nile River', lat: 29.015057898087626, lon: 31.046292702216313, id: '17211100141', zoom: 11},
-      {name: 'Rio Corubal', lat: 11.743206532693218, lon: -14.281213246249086, id: '14578000105', zoom: 11},
+      {name: 'Rio Corubal', lat: 12.044195836365532, lon: -14.030464563350662, id: '14578000151', zoom: 11},
     ],
   },
 };

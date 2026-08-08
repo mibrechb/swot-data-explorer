@@ -13,7 +13,7 @@ import geopandas as gpd
 from shapely.ops import polygonize, unary_union
 
 
-DEFAULT_OUTPUT_DIR = Path('data/orbit/processed')
+DEFAULT_OUTPUT_DIR = Path('/processed')
 
 
 def _parse_args() -> argparse.Namespace:
