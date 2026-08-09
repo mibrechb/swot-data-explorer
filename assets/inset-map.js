@@ -13,7 +13,7 @@ const DEFAULT_OPTIONS = {
   minLatitudeSpan:34,
 
   // At close zooms the true viewport polygon becomes too small to read.
-  viewportCircleZoom:10,
+  viewportCircleZoom:11,
   viewportCircleRadius:4,
 
   landUrl:'https://cdn.jsdelivr.net/npm/world-atlas@2/land-110m.json',
