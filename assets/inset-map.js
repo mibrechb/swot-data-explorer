@@ -12,9 +12,11 @@ const DEFAULT_OPTIONS = {
   minLongitudeSpan:48,
   minLatitudeSpan:34,
 
-  // At close zooms the true viewport polygon becomes too small to read.
-  viewportCircleZoom:11,
-  viewportCircleRadius:4,
+  // At close zooms the true viewport becomes very small
+  // We emphasize the viewport by increasing the stroke width
+  viewportEmphasisZoom:11,
+  viewportNormalStrokeWidth:2.4,
+  viewportEmphasisStrokeWidth:4.8,
 
   landUrl:'https://cdn.jsdelivr.net/npm/world-atlas@2/land-110m.json',
   countriesUrl:'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json',
@@ -116,6 +118,21 @@ function mercatorY(lat) {
   return Math.log(Math.tan(Math.PI / 4 + radians / 2));
 }
 
+function visibleLongitudeSpan(map) {
+  // Derive the horizontal geographic span from Leaflet's projected world
+  // width instead of west/east LatLng bounds. This stays continuous when the
+  // viewport crosses ±180° and, importantly, when it becomes wider than one
+  // complete 360° world at the minimum zoom level.
+  const zoom = map.getZoom();
+  const pixelWorldBounds = map.getPixelWorldBounds(zoom);
+
+  const worldPixelWidth =
+    pixelWorldBounds?.getSize?.().x ||
+    256 * Math.pow(2, zoom);
+
+  return 360 * map.getSize().x / Math.max(1, worldPixelWidth);
+}
+
 function adaptiveInsetScale(map, options, width, height) {
   const bounds = map.getBounds();
   const center = map.getCenter();
@@ -127,13 +144,9 @@ function adaptiveInsetScale(map, options, width, height) {
     WEB_MERCATOR_MAX_LAT,
   );
 
-  let west = longitudeNear(bounds.getWest(), centerLon);
-  let east = longitudeNear(bounds.getEast(), centerLon);
-  if (east < west) east += 360;
-
   const visibleLonSpan = Math.min(
     360,
-    Math.max(.0001, east - west),
+    Math.max(.0001, visibleLongitudeSpan(map)),
   );
 
   const visibleYSpan = Math.max(
@@ -215,7 +228,6 @@ export async function createGlobalInset(map) {
   let clipRect;
   let worldStrip;
   let viewport;
-  let viewportCircle;
   let resizeObserver = null;
 
   let landFeature = null;
@@ -377,26 +389,11 @@ export async function createGlobalInset(map) {
       `translate(${wrappedTranslateX},${translateY})`,
     );
 
-    // Keep the red viewport in the same continuous longitude space as the
-    // main Leaflet map. Do NOT pass unwrapped longitudes such as 181° or 541°
-    // through D3's geographic projection: D3 normalizes them at the
-    // antimeridian, which makes the polygon jump/disappear.
-    //
-    // Instead, calculate X directly from longitude distance to the current
-    // Leaflet center. Mercator X is linear in longitude, so this remains
-    // correct across any number of ±360° world copies.
+    // Keep the red viewport independent of longitude wrapping. Its horizontal
+    // size is derived from Leaflet's projected viewport/world size, so the
+    // footprint remains correct across the antimeridian and when the main map
+    // becomes wider than one complete world at minimum zoom.
     const bounds = map.getBounds();
-    const rawCenterLon = map.getCenter().lng;
-
-    let west = longitudeNear(
-      bounds.getWest(),
-      rawCenterLon,
-    );
-    let east = longitudeNear(
-      bounds.getEast(),
-      rawCenterLon,
-    );
-    if (east < west) east += 360;
 
     const north = clamp(
       bounds.getNorth(),
@@ -409,57 +406,64 @@ export async function createGlobalInset(map) {
       WEB_MERCATOR_MAX_LAT,
     );
 
-    const longitudeToScreenX = (lon) =>
-      width / 2 +
-      (lon - rawCenterLon) * Math.PI / 180 * renderedScale;
-
     const latitudeToScreenY = (lat) => {
       const [, y] = projection([0, lat]);
       return y + translateY;
     };
 
+    // Horizontal footprint of the main map in inset pixels. Using the
+    // projected viewport span avoids the old ±180° / ±360° wrap ambiguity.
+    const mainLonSpan = visibleLongitudeSpan(map);
+    const halfViewportWidth =
+      mainLonSpan * Math.PI / 180 * renderedScale / 2;
+
+    let viewportLeft = width / 2 - halfViewportWidth;
+    let viewportRight = width / 2 + halfViewportWidth;
+
+    // Once the main viewport spans a complete world (or more), every
+    // longitude represented by this periodic inset is visible. Represent that
+    // cleanly as the complete inset width instead of choosing an arbitrary
+    // neighboring world copy.
+    if (mainLonSpan >= 360) {
+      viewportLeft = 0;
+      viewportRight = width;
+    }
+
     const points = [
-      [longitudeToScreenX(west), latitudeToScreenY(north)],
-      [longitudeToScreenX(east), latitudeToScreenY(north)],
-      [longitudeToScreenX(east), latitudeToScreenY(south)],
-      [longitudeToScreenX(west), latitudeToScreenY(south)],
+      [viewportLeft, latitudeToScreenY(north)],
+      [viewportRight, latitudeToScreenY(north)],
+      [viewportRight, latitudeToScreenY(south)],
+      [viewportLeft, latitudeToScreenY(south)],
     ]
       .map(([x, y]) => `${x},${y}`)
       .join(' ');
 
     const colors = themeColors();
 
-    if (map.getZoom() >= options.viewportCircleZoom) {
-      // Close zoom: show ONLY the fixed-size circle.
-      const center = map.getCenter();
-      const centerX = width / 2;
-      const centerY = latitudeToScreenY(
-        clamp(
-          center.lat,
-          -WEB_MERCATOR_MAX_LAT,
-          WEB_MERCATOR_MAX_LAT,
-        ),
-      );
+    // Always show the exact current viewport rectangle. At close zoom levels
+    // the rectangle can become very small, so only its styling changes:
+    // increase the outline width and remove the fill.
+    const emphasized =
+      map.getZoom() >= options.viewportEmphasisZoom;
 
-      viewport.style.display = 'none';
-      viewportCircle.style.display = '';
+    viewport.setAttribute('points', points);
 
-      viewportCircle.setAttribute('cx', centerX);
-      viewportCircle.setAttribute('cy', centerY);
-      viewportCircle.setAttribute(
-        'r',
-        options.viewportCircleRadius,
-      );
-      viewportCircle.setAttribute('stroke', colors.accent);
-      viewportCircle.setAttribute('fill', colors.accent);
+    // Use inline SVG styles rather than presentation attributes. A CSS
+    // stroke-width rule has higher precedence than an SVG presentation
+    // attribute and could therefore make the configurable widths appear to
+    // have no effect.
+    viewport.style.stroke = colors.accent;
+    viewport.style.strokeWidth =
+      `${emphasized
+        ? options.viewportEmphasisStrokeWidth
+        : options.viewportNormalStrokeWidth}px`;
+
+    if (emphasized) {
+      viewport.style.fill = colors.accent;
+      viewport.style.fillOpacity = '0';
     } else {
-      // Wider zoom: show ONLY the actual viewport polygon.
-      viewportCircle.style.display = 'none';
-      viewport.style.display = '';
-
-      viewport.setAttribute('points', points);
-      viewport.setAttribute('stroke', colors.accent);
-      viewport.setAttribute('fill', colors.accent);
+      viewport.style.fill = colors.accent;
+      viewport.style.fillOpacity = '.10';
     }
   }
 
@@ -563,15 +567,9 @@ export async function createGlobalInset(map) {
       class:'global-inset-viewport',
     });
 
-    viewportCircle = svgElement('circle', {
-      class:'global-inset-viewport-circle',
-      style:'display:none',
-    });
-
     clippedGroup.append(
       worldStrip,
       viewport,
-      viewportCircle,
     );
     svg.append(defs, clippedGroup);
     container.append(svg);
