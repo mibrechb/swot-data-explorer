@@ -15,6 +15,26 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css">
   <link rel="stylesheet" href="./assets/styles.css?v=33">
+
+  <style>
+    .welcome-intro-mobile {
+      display: none;
+    }
+
+    .welcome-intro-desktop p + p {
+      margin-top: 10px;
+    }
+
+    @media (max-width: 700px) {
+      .welcome-intro-desktop {
+        display: none;
+      }
+
+      .welcome-intro-mobile {
+        display: block;
+      }
+    }
+  </style>
 </head>
 <body>
   <main id="app">
@@ -84,17 +104,28 @@
 
         <div class="welcome-copy">
           <h2 id="welcome-title">Welcome to the SWOT Lake and River Explorer</h2>
-          <p>
-            Reliable information on water levels and river flows is essential for understanding freshwater availability and supporting hydrological modelling. 
-            The <a href="https://swot.jpl.nasa.gov/" target="_blank" rel="noopener noreferrer">Surface Water and Ocean Topography (SWOT) mission</a> provides a new, satellite-based global source of information on lakes and rivers, including estimates of water surface elevation and river discharge. 
-          </p>
-          <p>
-            The <b>SWOT Lake and River Explorer</b> lets you explore global hydrologic measurements for lakes and rivers from the SWOT mission.
-            Measurements are derived from high-resolution radar observations collected by the Ka-band Radar Interferometer (KaRIn) onboard SWOT.
-            The provided data is served through the
-            <a href="https://podaac.github.io/hydrocron/" target="_blank" rel="noopener noreferrer">PO.DAAC Hydrocron API</a>. Start exploring
-            by selecting a lake or river reach/node.
-          </p>
+          <div class="welcome-intro-desktop">
+            <p>
+              Reliable information on water levels and river flows is essential for understanding freshwater availability and supporting hydrological modelling.
+              The <a href="https://swot.jpl.nasa.gov/" target="_blank" rel="noopener noreferrer">Surface Water and Ocean Topography (SWOT) mission</a> provides a new, satellite-based global source of information on lakes and rivers, including estimates of water surface elevation and river discharge.
+            </p>
+            <p>
+              The <b>SWOT Lake and River Explorer</b> lets you explore global hydrologic measurements for lakes and rivers from the SWOT mission.
+              Measurements are derived from high-resolution radar observations collected by the Ka-band Radar Interferometer (KaRIn) onboard SWOT.
+              The provided data is served through the
+              <a href="https://podaac.github.io/hydrocron/" target="_blank" rel="noopener noreferrer">PO.DAAC Hydrocron API</a>. Start exploring
+              by selecting a lake or river reach/node.
+            </p>
+          </div>
+
+          <div class="welcome-intro-mobile">
+            <p>
+              The <b>SWOT Lake and River Explorer</b> provides interactive access to global
+              <a href="https://swot.jpl.nasa.gov/" target="_blank" rel="noopener noreferrer">Surface Water and Ocean Topography (SWOT) mission</a>
+              observations of lakes and rivers, including water surface elevation and river discharge.
+              Select a lake, river reach or node on the map to explore the available time series.
+            </p>
+          </div>
           <aside
             class="dataset-citation"
             aria-label="New feature update"
