@@ -12,6 +12,8 @@ const HYDROCRON_URL =
 
 const ALLOWED_ORIGINS = new Set([
   'https://mibrechb.github.io',
+  'https://swot.sos-water.eu',
+  'https://www.swot.sos-water.eu',  
   'http://127.0.0.1:8000',
   'http://localhost:8000',
 ]);
