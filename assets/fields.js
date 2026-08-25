@@ -6,9 +6,9 @@ export const FEATURE_CONFIG = {
     idCandidates: ['fid', 'lake_id'],
     feature: 'PriorLake',
     collection: 'SWOT_L2_HR_LakeSP_D',
-    variables: ['wse', 'area_total', 'ds1_l', 'ds1_q', 'ds2_l', 'ds2_q'],
+    variables: ['wse', /*'area_total',*/ 'ds1_l', 'ds1_q', 'ds2_l', 'ds2_q'],
     defaultVariable: 'wse',
-    smoothDefaults: ['wse', 'area_total', 'ds1_l', 'ds1_q', 'ds2_l', 'ds2_q'],
+    smoothDefaults: ['wse', /*'area_total',*/ 'ds1_l', 'ds1_q', 'ds2_l', 'ds2_q'],
     qualityFields: [
       'quality_f', 'wse_u', 'area_tot_u',
       'ds1_l_u', 'ds1_q_u', 'ds2_l_u', 'ds2_q_u',
