@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css">
-  <link rel="stylesheet" href="./assets/styles.css?v=33">
+  <link rel="stylesheet" href="./assets/styles.css?v=44">
 
   <style>
     .welcome-intro-mobile {
@@ -22,7 +22,7 @@
     }
 
     .welcome-intro-desktop p + p {
-      margin-top: 10px;
+      margin-top: 14px;
     }
 
     @media (max-width: 700px) {
@@ -121,7 +121,7 @@
           <div class="welcome-intro-mobile">
             <p>
               The <b>SWOT Lake and River Explorer</b> provides interactive access to global
-              <a href="https://swot.jpl.nasa.gov/" target="_blank" rel="noopener noreferrer">Surface Water and Ocean Topography (SWOT) mission</a>
+              <a href="https://swot.jpl.nasa.gov/" target="_blank" rel="noopener noreferrer">SWOT</a>
               observations of lakes and rivers, including water surface elevation and river discharge.
               Select a lake, river reach or node on the map to explore the available time series.
             </p>
@@ -216,13 +216,200 @@
             </div>
             <div id="plot-loading" class="plot-loading"><span id="plot-spinner" class="loading-spinner" hidden aria-hidden="true"></span><span id="plot-loading-text">Select a feature to load observations.</span></div>
             <div id="plot"></div>
-            <div class="smoothing-controls">
-              <div class="settings-heading">Smoothing settings</div>
-              <label class="check-row"><input id="smoothing-enabled" type="checkbox"> Enable smoothing (LOWESS)</label>
-              <label id="include-suspect-row" class="check-row"><input id="include-suspect" type="checkbox" checked> Include suspect observations</label>
-              <label>Smoothness (f) <input id="smoothness" type="range" min="0.01" max="0.80" step="0.01" value="0.10"><output id="smoothness-value">0.10</output></label>
-              <label>Outlier threshold (τ) <input id="outlier-threshold" type="range" min="2" max="8" step="0.5" value="4"><output id="outlier-value">4.0</output></label>
-            </div>
+            <details id="lake-quality-controls" class="settings-disclosure quality-controls" hidden>
+              <summary class="settings-summary">
+                <span class="settings-heading">
+                  <img class="settings-heading-icon" src="./assets/img/icon_qfilter.svg" alt="">
+                  <span>Quality settings</span>
+                </span>
+                <span class="settings-chevron" aria-hidden="true"></span>
+              </summary>
+
+              <div class="settings-body">
+                <div class="quality-settings-grid">
+                  <div class="quality-setting-item">
+                    <div class="setting-label-with-help">
+                      <span class="setting-label-text">Show suspect observations</span>
+                      <button
+                        class="setting-help-button"
+                        type="button"
+                        aria-label="About suspect observations"
+                        aria-expanded="false"
+                        aria-controls="quality-help-suspect"
+                        data-help-target="quality-help-suspect"
+                      >i</button>
+                    </div>
+                    <label class="toggle-switch" title="Show or hide suspect observations">
+                      <input id="include-suspect" type="checkbox" checked>
+                      <span aria-hidden="true"></span>
+                    </label>
+                  </div>
+
+                  <div class="quality-setting-item">
+                    <div class="setting-label-with-help">
+                      <span class="setting-label-text">Show rejected observations</span>
+                      <button
+                        class="setting-help-button"
+                        type="button"
+                        aria-label="About rejected observations"
+                        aria-expanded="false"
+                        aria-controls="quality-help-rejected"
+                        data-help-target="quality-help-rejected"
+                      >i</button>
+                    </div>
+                    <label class="toggle-switch" title="Show or hide rejected observations">
+                      <input id="include-rejected" type="checkbox">
+                      <span aria-hidden="true"></span>
+                    </label>
+                  </div>
+
+                  <div class="quality-setting-item">
+                    <div class="setting-label-with-help">
+                      <span class="setting-label-text">Show uncertainty</span>
+                      <button
+                        class="setting-help-button"
+                        type="button"
+                        aria-label="About measurement uncertainty"
+                        aria-expanded="false"
+                        aria-controls="quality-help-uncertainty"
+                        data-help-target="quality-help-uncertainty"
+                      >i</button>
+                    </div>
+                    <label class="toggle-switch" title="Show or hide reported uncertainty">
+                      <input id="show-uncertainty" type="checkbox" checked>
+                      <span aria-hidden="true"></span>
+                    </label>
+                  </div>
+
+                  <div class="quality-setting-item quality-setting-item-ice">
+                    <div class="setting-label-with-help">
+                      <label class="setting-label-text" for="ice-display-mode">Show ice-affected</label>
+                      <button
+                        class="setting-help-button"
+                        type="button"
+                        aria-label="About ice indication"
+                        aria-expanded="false"
+                        aria-controls="quality-help-ice"
+                        data-help-target="quality-help-ice"
+                      >i</button>
+                    </div>
+                    <select id="ice-display-mode" class="compact-setting-select" aria-label="Ice indication source">
+                      <option value="none" selected>Off</option>
+                      <option value="climatology">Climatology (ice_clim_f)</option>
+                      <option value="dynamic">Dynamic (ice_dyn_f)</option>
+                      <option value="both">Both</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="settings-help-stack">
+                  <div id="quality-help-suspect" class="setting-help-text" hidden>
+                    Uses <code>quality_f</code>. Shows observations classified as suspect
+                    (<code>quality_f = 1</code>).
+                  </div>
+
+                  <div id="quality-help-rejected" class="setting-help-text" hidden>
+                    Uses <code>quality_f</code>. Shows observations rejected by the explorer
+                    quality classification (<code>quality_f &gt; 1</code> or invalid).
+                  </div>
+
+                  <div id="quality-help-uncertainty" class="setting-help-text" hidden>
+                    Uses the uncertainty field paired with the selected variable, for example
+                    <code>wse_u</code> for water-surface elevation.
+                  </div>
+
+                  <div id="quality-help-ice" class="setting-help-text" hidden>
+                    Uses <code>ice_clim_f</code> for expected seasonal ice and
+                    <code>ice_dyn_f</code> for dynamic ice information near the SWOT
+                    acquisition; the cited source is Landsat-based. Ice indication adds
+                    background shading only.
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <details class="settings-disclosure smoothing-controls">
+              <summary class="settings-summary">
+                <span class="settings-heading">
+                  <img class="settings-heading-icon" src="./assets/img/icon_smoothing.svg" alt="">
+                  <span>Smoothing settings</span>
+                </span>
+                <span class="settings-chevron" aria-hidden="true"></span>
+              </summary>
+
+              <div class="settings-body">
+                <div class="smoothing-settings-body">
+                  <label class="check-row"><input id="smoothing-enabled" type="checkbox"> Enable smoothing (LOWESS)</label>
+
+                  <div class="smoothing-parameter-row">
+                    <div class="setting-label-with-help">
+                      <label class="setting-label-text" for="smoothness">Smoothness (f)</label>
+                      <button
+                        class="setting-help-button"
+                        type="button"
+                        aria-label="About LOWESS smoothness"
+                        aria-expanded="false"
+                        aria-controls="smoothing-help-smoothness"
+                        data-help-target="smoothing-help-smoothness"
+                      >i</button>
+                    </div>
+                    <input id="smoothness" type="range" min="0.01" max="0.80" step="0.01" value="0.10">
+                    <output id="smoothness-value">0.10</output>
+                  </div>
+
+                  <div class="smoothing-parameter-row">
+                    <div class="setting-label-with-help">
+                      <label class="setting-label-text" for="outlier-threshold">Outlier threshold (τ)</label>
+                      <button
+                        class="setting-help-button"
+                        type="button"
+                        aria-label="About the LOWESS outlier threshold"
+                        aria-expanded="false"
+                        aria-controls="smoothing-help-threshold"
+                        data-help-target="smoothing-help-threshold"
+                      >i</button>
+                    </div>
+                    <input id="outlier-threshold" type="range" min="2" max="8" step="0.5" value="4">
+                    <output id="outlier-value">4.0</output>
+                  </div>
+
+                  <div class="smoothing-parameter-row">
+                    <div class="setting-label-with-help">
+                      <label class="setting-label-text" for="smoothing-max-gap">Maximum gap</label>
+                      <button
+                        class="setting-help-button"
+                        type="button"
+                        aria-label="About the LOWESS maximum gap"
+                        aria-expanded="false"
+                        aria-controls="smoothing-help-gap"
+                        data-help-target="smoothing-help-gap"
+                      >i</button>
+                    </div>
+                    <input id="smoothing-max-gap" type="range" min="21" max="210" step="7" value="63">
+                    <output id="smoothing-max-gap-value">63 d</output>
+                  </div>
+                </div>
+
+                <div class="settings-help-stack">
+                  <div id="smoothing-help-smoothness" class="setting-help-text" hidden>
+                    Controls how many nearby observations are used in each local LOWESS fit.
+                    Lower values follow short-term changes more closely; higher values produce
+                    a smoother curve.
+                  </div>
+
+                  <div id="smoothing-help-threshold" class="setting-help-text" hidden>
+                    Sets how strongly an observation may deviate from the robust LOWESS fit
+                    before it is flagged as an outlier. Flagged outliers are excluded from
+                    subsequent fitting.
+                  </div>
+
+                  <div id="smoothing-help-gap" class="setting-help-text" hidden>
+                    Sets the longest time gap LOWESS may span. Larger gaps split the time
+                    series and are fitted independently.
+                  </div>
+                </div>
+              </div>
+            </details>
             <section class="data-description" aria-labelledby="data-description-heading">
               <div id="data-description-heading" class="settings-heading">Data description</div>
               <div id="data-description-content"></div>
@@ -238,6 +425,6 @@
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://unpkg.com/flatgeobuf@4.4.0/dist/flatgeobuf-geojson.min.js"></script>
-  <script type="module" src="./assets/app.js?v=33"></script>
+  <script type="module" src="./assets/app.js?v=44"></script>
 </body>
 </html>

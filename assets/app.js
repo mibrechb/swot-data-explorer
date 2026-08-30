@@ -1,7 +1,7 @@
 import {CONFIG} from './config.js';
-import {FEATURE_CONFIG, META_LABELS, variableLabel, variableUnit} from './fields.js';
-import {robustLowess} from './smoothing.js';
-import {createGlobalInset} from './inset-map.js';
+import {FEATURE_CONFIG, META_LABELS, variableLabel, variableUnit} from './fields.js?v=44';
+import {lowess, robustLowess} from './smoothing.js?v=41';
+import {createGlobalInset} from './inset-map.js?v=35';
 
 const state = {
   featureType: 'lake',
@@ -211,12 +211,17 @@ const els = {
   loadingText: document.querySelector('#plot-loading-text'),
   spinner: document.querySelector('#plot-spinner'),
   smoothing: document.querySelector('#smoothing-enabled'),
+  qualityControls: document.querySelector('#lake-quality-controls'),
   includeSuspect: document.querySelector('#include-suspect'),
-  includeSuspectRow: document.querySelector('#include-suspect-row'),
+  includeRejected: document.querySelector('#include-rejected'),
+  iceDisplayMode: document.querySelector('#ice-display-mode'),
+  showUncertainty: document.querySelector('#show-uncertainty'),
   smoothness: document.querySelector('#smoothness'),
   smoothnessValue: document.querySelector('#smoothness-value'),
   threshold: document.querySelector('#outlier-threshold'),
   thresholdValue: document.querySelector('#outlier-value'),
+  smoothingMaxGap: document.querySelector('#smoothing-max-gap'),
+  smoothingMaxGapValue: document.querySelector('#smoothing-max-gap-value'),
   frequencyToggle: document.querySelector('#frequency-toggle'),
   frequencyLegend: document.querySelector('#frequency-legend'),
   dataDescription: document.querySelector('#data-description-content'),
@@ -1352,13 +1357,13 @@ function renderDataDescription() {
 
   if (isLake) {
     els.dataDescription.innerHTML = `
-      <p>Lake observations shown are from <strong>SWOT_L2_HR_LakeSP_D</strong>. 
-      This dataset provides geolocated surface water measurements for lakes, derived 
-      from high-resolution radar observations collected by the Ka-band Radar 
-      Interferometer (KaRIn) on the SWOT satellite. The variables contained 
-      include water surface elevation, surface area, and quality indicators.
-      From April to July 2023, data may be unusually frequent or absent
-      before the transition from calibration to operational orbit.</p>
+      <p>Lake observations shown are from <strong>SWOT_L2_HR_LakeSP_D</strong>.
+      This dataset provides geolocated surface water measurements for lakes, derived
+      from high-resolution radar observations collected by the Ka-band Radar
+      Interferometer (KaRIn) on the SWOT satellite. The main variable contained is
+      water surface elevation. From April to July 2023, data may be unusually
+      frequent or absent before the transition from calibration to operational
+      orbit.</p>
       <div class="dataset-citation">
         <p>SWOT. (2025). <em>SWOT Level 2 Lake Single-Pass Vector Data Product</em> 
         [Dataset]. NASA Physical Oceanography Distributed Active Archive Center. 
@@ -1407,8 +1412,22 @@ function populateVariables() {
   const initial = available.includes(cfg.defaultVariable) ? cfg.defaultVariable : available[0];
   els.variable.value = initial || '';
   els.smoothing.checked = cfg.smoothDefaults.includes(initial);
-  els.includeSuspect.checked = true;
-  els.includeSuspectRow.hidden = state.featureType !== 'lake';
+
+  const isLake = state.featureType === 'lake';
+  els.qualityControls.hidden = !isLake;
+
+  if (isLake) {
+    // Keep the default lake plot complete and simple. Suspect observations
+    // remain visible, uncertainty is shown, and ice information is opt-in as
+    // a visual highlight rather than an automatic filter.
+    els.includeSuspect.checked = true;
+    els.includeRejected.checked = false;
+    els.iceDisplayMode.value = 'none';
+    els.showUncertainty.checked = true;
+    updateIceAvailability();
+  }
+
+  updateUncertaintyAvailability(initial);
   return initial;
 }
 
@@ -1444,24 +1463,291 @@ function qualityClass(value) {
   return 'rejected';
 }
 
+const LAKE_UNCERTAINTY_FIELDS = {
+  wse: 'wse_u',
+  area_total: 'area_tot_u',
+  ds1_l: 'ds1_l_u',
+  ds1_q: 'ds1_q_u',
+  ds2_l: 'ds2_l_u',
+  ds2_q: 'ds2_q_u',
+};
+
 function variableQualityConfig(variable) {
   if (state.featureType !== 'lake') return null;
 
-  const uncertaintyFields = {
-    wse: 'wse_u',
-    area_total: 'area_tot_u',
-    ds1_l: 'ds1_l_u',
-    ds1_q: 'ds1_q_u',
-    ds2_l: 'ds2_l_u',
-    ds2_q: 'ds2_q_u',
-  };
-  const uncertaintyField = uncertaintyFields[variable];
+  const uncertaintyField = LAKE_UNCERTAINTY_FIELDS[variable];
   if (!uncertaintyField) return null;
 
   return {
     qualityField: 'quality_f',
     uncertaintyField,
-    includeSuspectInFit: els.includeSuspect.checked,
+    iceClimField: 'ice_clim_f',
+    iceDynamicField: 'ice_dyn_f',
+  };
+}
+
+function updateUncertaintyAvailability(variable) {
+  if (!els.showUncertainty) return;
+
+  if (state.featureType !== 'lake') {
+    els.showUncertainty.checked = false;
+    els.showUncertainty.disabled = true;
+    return;
+  }
+
+  const uncertaintyField = LAKE_UNCERTAINTY_FIELDS[variable];
+  const hasUncertainty = Boolean(
+    uncertaintyField &&
+    state.dataframe.some(
+      (row) => finiteNumber(row[uncertaintyField]) !== null,
+    )
+  );
+
+  els.showUncertainty.disabled = !hasUncertainty;
+  if (!hasUncertainty) els.showUncertainty.checked = false;
+}
+
+function iceFlagValue(value) {
+  const flag = finiteNumber(value);
+  return flag === 0 || flag === 1 || flag === 2 ? flag : null;
+}
+
+function iceFlagged(value) {
+  const flag = iceFlagValue(value);
+  return flag === 1 || flag === 2;
+}
+
+function climatologicalIceLabel(value) {
+  const flag = iceFlagValue(value);
+  if (flag === 0) return 'no ice expected';
+  if (flag === 1) return 'uncertain / possible ice';
+  if (flag === 2) return 'full ice expected';
+  return 'not available';
+}
+
+function dynamicIceLabel(value) {
+  const flag = iceFlagValue(value);
+  if (flag === 0) return 'no ice';
+  if (flag === 1) return 'partial ice';
+  if (flag === 2) return 'full ice';
+  return 'not available';
+}
+
+function iceHoverValue(value) {
+  const flag = iceFlagValue(value);
+  return flag === null ? 'N/A' : flag;
+}
+
+const ICE_CLIM_HALF_WINDOW_DAYS = 10.5;
+const ICE_DYNAMIC_HALF_WINDOW_DAYS = 1;
+
+function selectedIceModes() {
+  const mode = els.iceDisplayMode?.value || 'none';
+
+  return {
+    climatology: mode === 'climatology' || mode === 'both',
+    dynamic: mode === 'dynamic' || mode === 'both',
+  };
+}
+
+function mergeTimeIntervals(intervals) {
+  const sorted = [...intervals]
+    .sort((a, b) => a[0].getTime() - b[0].getTime());
+
+  const merged = [];
+  for (const interval of sorted) {
+    const previous = merged.at(-1);
+
+    if (
+      previous &&
+      interval[0].getTime() <= previous[1].getTime()
+    ) {
+      if (interval[1].getTime() > previous[1].getTime()) {
+        previous[1] = interval[1];
+      }
+      continue;
+    }
+
+    merged.push([new Date(interval[0]), new Date(interval[1])]);
+  }
+
+  return merged;
+}
+
+function iceBackgroundShapes(rows) {
+  if (state.featureType !== 'lake') return [];
+
+  const modes = selectedIceModes();
+  const dayMs = 86400000;
+  const shapes = [];
+
+  if (modes.climatology) {
+    const climatologyIntervals = rows
+      .filter((row) => iceFlagged(row.iceClim))
+      .map((row) => {
+        const t = row.time.getTime();
+        return [
+          new Date(t - ICE_CLIM_HALF_WINDOW_DAYS * dayMs),
+          new Date(t + ICE_CLIM_HALF_WINDOW_DAYS * dayMs),
+        ];
+      });
+
+    for (const [x0, x1] of mergeTimeIntervals(climatologyIntervals)) {
+      shapes.push({
+        type: 'rect',
+        xref: 'x',
+        yref: 'paper',
+        x0,
+        x1,
+        y0: 0,
+        y1: 1,
+        fillcolor: 'rgba(106, 190, 222, 0.13)',
+        line: {width: 0},
+        layer: 'below',
+      });
+    }
+  }
+
+  if (modes.dynamic) {
+    for (const row of rows.filter((item) => iceFlagged(item.iceDynamic))) {
+      const t = row.time.getTime();
+
+      shapes.push({
+        type: 'rect',
+        xref: 'x',
+        yref: 'paper',
+        x0: new Date(t - ICE_DYNAMIC_HALF_WINDOW_DAYS * dayMs),
+        x1: new Date(t + ICE_DYNAMIC_HALF_WINDOW_DAYS * dayMs),
+        y0: 0,
+        y1: 1,
+        fillcolor: 'rgba(38, 137, 177, 0.28)',
+        line: {width: 0},
+        layer: 'below',
+      });
+    }
+  }
+
+  return shapes;
+}
+
+function iceLegendTraces(rows) {
+  if (state.featureType !== 'lake') return [];
+
+  const modes = selectedIceModes();
+  const traces = [];
+
+  if (
+    modes.climatology &&
+    rows.some((row) => iceFlagged(row.iceClim))
+  ) {
+    traces.push({
+      x: [null],
+      y: [null],
+      mode: 'lines',
+      name: 'Pot. ice-affected (ice_clim_f)',
+      line: {
+        color: 'rgba(106, 190, 222, 0.42)',
+        width: 9,
+      },
+      hoverinfo: 'skip',
+    });
+  }
+
+  if (
+    modes.dynamic &&
+    rows.some((row) => iceFlagged(row.iceDynamic))
+  ) {
+    traces.push({
+      x: [null],
+      y: [null],
+      mode: 'lines',
+      name: 'Pot. ice-affected (ice_dyn_f)',
+      line: {
+        color: 'rgba(38, 137, 177, 0.72)',
+        width: 5,
+      },
+      hoverinfo: 'skip',
+    });
+  }
+
+  return traces;
+}
+
+function iceFlagAvailability(field) {
+  const valid = state.dataframe
+    .map((row) => iceFlagValue(row[field]))
+    .filter((value) => value !== null);
+
+  return {
+    available: valid.length > 0,
+    flagged: valid.filter((value) => value === 1 || value === 2).length,
+  };
+}
+
+function updateIceAvailability() {
+  if (!els.iceDisplayMode || state.featureType !== 'lake') return;
+
+  const clim = iceFlagAvailability('ice_clim_f');
+  const dynamic = iceFlagAvailability('ice_dyn_f');
+  const climOption = els.iceDisplayMode.querySelector(
+    'option[value="climatology"]',
+  );
+  const dynamicOption = els.iceDisplayMode.querySelector(
+    'option[value="dynamic"]',
+  );
+  const bothOption = els.iceDisplayMode.querySelector(
+    'option[value="both"]',
+  );
+
+  if (climOption) {
+    climOption.disabled = !clim.available;
+    climOption.textContent = clim.available
+      ? `Climatology (ice_clim_f) · ${clim.flagged} flagged`
+      : 'Climatology (ice_clim_f) · unavailable';
+  }
+
+  if (dynamicOption) {
+    dynamicOption.disabled = !dynamic.available;
+    dynamicOption.textContent = dynamic.available
+      ? `Dynamic (ice_dyn_f) · ${dynamic.flagged} flagged`
+      : 'Dynamic (ice_dyn_f) · unavailable';
+  }
+
+  if (bothOption) {
+    bothOption.disabled = !(clim.available && dynamic.available);
+    bothOption.textContent = clim.available && dynamic.available
+      ? 'Both ice flags'
+      : 'Both ice flags · unavailable';
+  }
+
+  const selected = els.iceDisplayMode.selectedOptions[0];
+  if (selected?.disabled) {
+    els.iceDisplayMode.value = 'none';
+  }
+}
+
+function uncertaintyErrorBars(rows, config) {
+  if (
+    !config ||
+    !els.showUncertainty.checked ||
+    els.showUncertainty.disabled
+  ) {
+    return undefined;
+  }
+
+  const values = rows.map(
+    (row) => finiteNumber(row[config.uncertaintyField]) ?? 0,
+  );
+
+  if (!values.some((value) => value > 0)) return undefined;
+
+  return {
+    type: 'data',
+    array: values,
+    visible: true,
+    thickness: 0.8,
+    width: 2,
+    color: 'rgba(16,32,47,.35)',
   };
 }
 
@@ -1473,15 +1759,132 @@ function qualityHoverTemplate(variable, config) {
     `${variable}: %{y}${valueUnit ? ` ${valueUnit}` : ''}`,
     `${config.uncertaintyField}: %{customdata[0]}${uncertaintyUnit ? ` ${uncertaintyUnit}` : ''}`,
     `${config.qualityField}: %{customdata[1]}`,
+    `${config.iceDynamicField}: %{customdata[2]}`,
+    `${config.iceClimField}: %{customdata[3]}`,
     '<extra></extra>',
   ].join('<br>');
 }
 
 function traceHover(row, config) {
   if (!config) return [];
-  const uncertainty = normalise(row[config.uncertaintyField]);
-  const quality = normalise(row[config.qualityField]);
-  return [uncertainty ?? 'N/A', quality ?? 'N/A'];
+  const uncertainty = finiteNumber(row[config.uncertaintyField]);
+  const quality = finiteNumber(row[config.qualityField]);
+
+  return [
+    uncertainty ?? 'N/A',
+    quality ?? 'N/A',
+    iceHoverValue(row[config.iceDynamicField]),
+    iceHoverValue(row[config.iceClimField]),
+  ];
+}
+
+function splitRowsByGap(rows, maxGapMs) {
+  const segments = [];
+
+  for (const row of rows) {
+    const current = segments.at(-1);
+
+    if (
+      !current ||
+      !current.length ||
+      row.time.getTime() -
+        current.at(-1).time.getTime() <= maxGapMs
+    ) {
+      if (!current) segments.push([]);
+      segments.at(-1).push(row);
+    } else {
+      segments.push([row]);
+    }
+  }
+
+  return segments;
+}
+
+function segmentedRobustLowess(
+  rows,
+  fraction,
+  threshold,
+  maxGapDays,
+) {
+  const maxGapMs =
+    Math.max(1, maxGapDays) * 86400000;
+
+  const sourceSegments = splitRowsByGap(
+    rows,
+    maxGapMs,
+  );
+
+  const outlierSet = new Set();
+  const traceX = [];
+  const traceY = [];
+
+  for (const segment of sourceSegments) {
+    const x = segment.map(
+      (row) => row.time.getTime(),
+    );
+    const y = segment.map(
+      (row) => row.value,
+    );
+
+    const result = robustLowess(
+      x,
+      y,
+      fraction,
+      threshold,
+      3,
+    );
+
+    segment.forEach((row, index) => {
+      if (result.outliers[index]) {
+        outlierSet.add(row);
+      }
+    });
+
+    // Completely remove rejected observations before the final LOWESS fit.
+    // Re-split after removal as well: an outlier cannot act as a bridge that
+    // causes the final curve to span a gap larger than the user's limit.
+    const retainedRows = result.retainedIndexes.map(
+      (index) => segment[index],
+    );
+
+    const finalSegments = splitRowsByGap(
+      retainedRows,
+      maxGapMs,
+    );
+
+    for (const finalSegment of finalSegments) {
+      if (!finalSegment.length) continue;
+
+      if (traceX.length) {
+        // Nulls tell Plotly not to connect independent fit segments.
+        traceX.push(null);
+        traceY.push(null);
+      }
+
+      const finalX = finalSegment.map(
+        (row) => row.time.getTime(),
+      );
+      const finalY = finalSegment.map(
+        (row) => row.value,
+      );
+      const finalFit = lowess(
+        finalX,
+        finalY,
+        fraction,
+      );
+
+      finalSegment.forEach((row, index) => {
+        traceX.push(row.time);
+        traceY.push(finalFit[index]);
+      });
+    }
+  }
+
+  return {
+    outlierSet,
+    traceX,
+    traceY,
+  };
 }
 
 async function renderPlot(
@@ -1506,6 +1909,8 @@ async function renderPlot(
       time: parseObservationTime(row.time_str),
       value: finiteNumber(row[variable]),
       quality: qualityConfig ? row[qualityConfig.qualityField] : null,
+      iceClim: qualityConfig ? row[qualityConfig.iceClimField] : null,
+      iceDynamic: qualityConfig ? row[qualityConfig.iceDynamicField] : null,
     }))
     .filter((row) => row.time !== null && row.value !== null)
     .sort((a, b) => a.time - b.time);
@@ -1517,36 +1922,43 @@ async function renderPlot(
   }
 
   const hasQualityClasses = qualityConfig !== null;
+
   const standardRows = hasQualityClasses
-    ? rows.filter((row) => qualityClass(row.quality) === 'observation')
+    ? rows.filter(
+      (row) => qualityClass(row.quality) === 'observation',
+    )
     : rows;
-  const suspectRows = hasQualityClasses
-    ? rows.filter((row) => qualityClass(row.quality) === 'suspect')
+
+  const suspectRows = hasQualityClasses && els.includeSuspect.checked
+    ? rows.filter(
+      (row) => qualityClass(row.quality) === 'suspect',
+    )
     : [];
+
   const rejectedRows = hasQualityClasses
-    ? rows.filter((row) => qualityClass(row.quality) === 'rejected')
+    ? rows.filter(
+      (row) => qualityClass(row.quality) === 'rejected',
+    )
     : [];
 
   const smoothingEnabled = els.smoothing.checked;
-  const fitRows = qualityConfig?.includeSuspectInFit
-    ? [...standardRows, ...suspectRows].sort((a, b) => a.time - b.time)
-    : standardRows;
-  const smoothX = fitRows.map((row) => row.time.getTime());
-  const smoothY = fitRows.map((row) => row.value);
+  const fitRows = [...standardRows, ...suspectRows]
+    .sort((a, b) => a.time - b.time);
+
   const smooth = smoothingEnabled
-    ? robustLowess(
-      smoothX,
-      smoothY,
+    ? segmentedRobustLowess(
+      fitRows,
       Number(els.smoothness.value),
       Number(els.threshold.value),
+      Number(els.smoothingMaxGap.value),
     )
-    : {fit: [...smoothY], outliers: smoothY.map(() => false)};
+    : {
+      outlierSet: new Set(),
+      traceX: fitRows.map((row) => row.time),
+      traceY: fitRows.map((row) => row.value),
+    };
 
-  const lowessOutlierSet = new Set(
-    smoothingEnabled
-      ? fitRows.filter((_, index) => smooth.outliers[index])
-      : [],
-  );
+  const lowessOutlierSet = smooth.outlierSet;
   const acceptedRows = standardRows.filter((row) => !lowessOutlierSet.has(row));
   const displayedSuspectRows = suspectRows.filter((row) => !lowessOutlierSet.has(row));
   const lowessOutlierRows = smoothingEnabled
@@ -1566,6 +1978,7 @@ async function renderPlot(
     mode: 'markers',
     name: 'Observation',
     marker: {size: 6, color: '#2d80b7'},
+    error_y: uncertaintyErrorBars(acceptedRows, qualityConfig),
     hovertemplate,
   }];
 
@@ -1573,7 +1986,9 @@ async function renderPlot(
     traces.push({
       x: displayedSuspectRows.map((row) => row.time),
       y: displayedSuspectRows.map((row) => row.value),
-      customdata: displayedSuspectRows.map((row) => traceHover(row, qualityConfig)),
+      customdata: displayedSuspectRows.map(
+        (row) => traceHover(row, qualityConfig),
+      ),
       mode: 'markers',
       name: 'Observation (suspect)',
       marker: {
@@ -1582,23 +1997,37 @@ async function renderPlot(
         symbol: 'circle',
         line: {width: 0.8, color: '#49c8f3'},
       },
+      error_y: uncertaintyErrorBars(
+        displayedSuspectRows,
+        qualityConfig,
+      ),
       hovertemplate,
     });
-    traces.push({
-      x: rejectedRows.map((row) => row.time),
-      y: rejectedRows.map((row) => row.value),
-      customdata: rejectedRows.map((row) => traceHover(row, qualityConfig)),
-      mode: 'markers',
-      name: 'Observation (rejected)',
-      visible: 'legendonly',
-      marker: {
-        size: 5,
-        color: '#8d96a0',
-        symbol: 'circle-open',
-        line: {width: 1.2, color: '#8d96a0'},
-      },
-      hovertemplate,
-    });
+
+    if (els.includeRejected.checked) {
+      traces.push({
+        x: rejectedRows.map((row) => row.time),
+        y: rejectedRows.map((row) => row.value),
+        customdata: rejectedRows.map(
+          (row) => traceHover(row, qualityConfig),
+        ),
+        mode: 'markers',
+        name: 'Observation (rejected)',
+        marker: {
+          size: 5,
+          color: '#8d96a0',
+          symbol: 'circle-open',
+          line: {width: 1.2, color: '#8d96a0'},
+        },
+        error_y: uncertaintyErrorBars(
+          rejectedRows,
+          qualityConfig,
+        ),
+        hovertemplate,
+      });
+    }
+
+    traces.push(...iceLegendTraces(rows));
   }
 
   if (smoothingEnabled) {
@@ -1614,13 +2043,18 @@ async function renderPlot(
         color: '#d62728',
         line: {width: 1},
       },
+      error_y: uncertaintyErrorBars(
+        lowessOutlierRows,
+        qualityConfig,
+      ),
       hovertemplate,
     });
     traces.push({
-      x: fitRows.map((row) => row.time),
-      y: smooth.fit,
+      x: smooth.traceX,
+      y: smooth.traceY,
       mode: 'lines',
       name: 'Fit (LOWESS)',
+      connectgaps: false,
       line: {width: 3, color: '#c8442c'},
       hoverinfo: 'skip',
     });
@@ -1668,6 +2102,9 @@ async function renderPlot(
     hovermode: 'x unified',
     paper_bgcolor: 'white',
     plot_bgcolor: '#f7f8f8',
+    shapes: hasQualityClasses
+      ? iceBackgroundShapes(rows)
+      : [],
   };
 
   if (previous?.x) layout.xaxis.range = previous.x;
@@ -1837,19 +2274,66 @@ function downloadSelectedCsv() {
 els.panelBack.addEventListener('click', () => closePanel({clear: true}));
 els.panelClose.addEventListener('click', () => closePanel({clear: true}));
 els.panelDownload.addEventListener('click', downloadSelectedCsv);
+document.querySelectorAll('.settings-disclosure').forEach((section) => {
+  section.addEventListener('toggle', () => {
+    if (section.open) return;
+
+    section.querySelectorAll('.setting-help-text').forEach((item) => {
+      item.hidden = true;
+    });
+    section.querySelectorAll('.setting-help-button').forEach((item) => {
+      item.setAttribute('aria-expanded', 'false');
+    });
+  });
+});
+
+document.querySelectorAll('.setting-help-button').forEach((button) => {
+  button.addEventListener('click', () => {
+    const targetId = button.dataset.helpTarget;
+    const target = targetId ? document.getElementById(targetId) : null;
+    if (!target) return;
+
+    const willOpen = target.hidden;
+
+    // Keep the section compact: show at most one detailed help item at once.
+    const section = button.closest('.settings-disclosure');
+    section?.querySelectorAll('.setting-help-text').forEach((item) => {
+      item.hidden = true;
+    });
+    section?.querySelectorAll('.setting-help-button').forEach((item) => {
+      item.setAttribute('aria-expanded', 'false');
+    });
+
+    target.hidden = !willOpen;
+    button.setAttribute(
+      'aria-expanded',
+      willOpen ? 'true' : 'false',
+    );
+  });
+});
+
 els.variable.addEventListener('change', () => {
   els.smoothing.checked = FEATURE_CONFIG[state.featureType]
     .smoothDefaults.includes(els.variable.value);
+  updateUncertaintyAvailability(els.variable.value);
   renderPlot(false);
 });
 els.smoothing.addEventListener('change', () => renderPlot(true));
 els.includeSuspect.addEventListener('change', () => renderPlot(true));
+els.includeRejected.addEventListener('change', () => renderPlot(true));
+els.iceDisplayMode.addEventListener('change', () => renderPlot(true));
+els.showUncertainty.addEventListener('change', () => renderPlot(true));
 els.smoothness.addEventListener('input', () => {
   els.smoothnessValue.value = Number(els.smoothness.value).toFixed(2);
   renderPlot(true);
 });
 els.threshold.addEventListener('input', () => {
   els.thresholdValue.value = Number(els.threshold.value).toFixed(1);
+  renderPlot(true);
+});
+els.smoothingMaxGap.addEventListener('input', () => {
+  els.smoothingMaxGapValue.value =
+    `${Number(els.smoothingMaxGap.value)} d`;
   renderPlot(true);
 });
 

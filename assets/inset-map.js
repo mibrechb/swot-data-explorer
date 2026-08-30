@@ -12,11 +12,10 @@ const DEFAULT_OPTIONS = {
   minLongitudeSpan:48,
   minLatitudeSpan:34,
 
-  // At close zooms the true viewport becomes very small
-  // We emphasize the viewport by increasing the stroke width
-  viewportEmphasisZoom:11,
+  // At close zooms the true viewport polygon becomes too small to read.
+  viewportEmphasisZoom:12,
   viewportNormalStrokeWidth:2.4,
-  viewportEmphasisStrokeWidth:4.8,
+  viewportEmphasisStrokeWidth:4.5,
 
   landUrl:'https://cdn.jsdelivr.net/npm/world-atlas@2/land-110m.json',
   countriesUrl:'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json',
@@ -459,7 +458,7 @@ export async function createGlobalInset(map) {
         : options.viewportNormalStrokeWidth}px`;
 
     if (emphasized) {
-      viewport.style.fill = colors.accent;
+      viewport.style.fill = 'none';
       viewport.style.fillOpacity = '0';
     } else {
       viewport.style.fill = colors.accent;
